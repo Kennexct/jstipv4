@@ -1,0 +1,173 @@
+:root {
+  --font: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono: 'Geist Mono', ui-monospace, monospace;
+  --bg: #fbfaf8;
+  --bg-side: #f4f3f0;
+  --surface: #fff;
+  --surface-2: #f6f5f2;
+  --surface-3: #eeede9;
+  --sunken: #f7f6f3;
+  --border: #e9e7e2;
+  --border-strong: #dad7d0;
+  --divider: #f0eeea;
+  --text: #1d1c1a;
+  --text-2: #57544e;
+  --text-3: #6b6760;
+  --text-4: #8c8880;
+  --accent: #4b5bd6;
+  --green: #25754b;
+  --amber: #8f5e0e;
+  --red: #b23c30;
+  --blue: #386eaa;
+  --violet: #7652c2;
+  --gray: #8c8880;
+  --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  --accent-line: color-mix(in srgb, var(--accent) 38%, var(--surface));
+  --green-soft: color-mix(in srgb, var(--green) 8%, var(--surface));
+  --amber-soft: color-mix(in srgb, var(--amber) 6%, var(--surface));
+  --fs-2xs: 11px;
+  --fs-xs: 12px;
+  --fs-sm: 12.5px;
+  --fs: 13.5px;
+  --fs-md: 14.5px;
+  --fs-lg: 16px;
+  --fs-xl: 19px;
+  --fs-2xl: 23px;
+  --fs-stat: 22px;
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r: 8px;
+  --r-lg: 10px;
+  --r-xl: 12px;
+  --r-sheet: 14px;
+  --r-full: 50%;
+  --gutter: 24px;
+  --side-w: 252px;
+  --topbar-h: 46px;
+  --row-h: 40px;
+  --h-md: 30px;
+  --h-lg: 36px;
+  --shadow-sm: 0 1px 2px #1d1c1a05;
+  --shadow-pop: 0 12px 40px #1d1c1a21, 0 2px 6px #1d1c1a0a;
+  --overlay: #1d1c1a47;
+  --dur: 140ms;
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --indigo-swatch: #4b5bd6;
+  --blue-swatch: #386eaa;
+  --violet-swatch: #7652c2;
+  --teal-swatch: #287d79;
+  --rose-swatch: #ad5274;
+  --graphite-swatch: #62615d;
+  --product-bg: #e9e9e5;
+  --product-paper: #f9f8ef;
+  --product-label: #78694e;
+  --product-edge: #bdb8a8;
+  --product-ink: #343532;
+  --tea: #688360;
+  --tea-light: #879875;
+  --bag: #ded0b6;
+  --bag-edge: #c6b495;
+  --honey: #ca9e5f;
+  --banana: #e3cc7b;
+  --banana-light: #efdf9f;
+  --banana-edge: #c5aa5d;
+  --gold: #d4bd7f;
+  --product-shadow: #00000010;
+}
+:root[data-theme='dark'] {
+  --bg: #1a1a19;
+  --bg-side: #151514;
+  --surface: #1d1d1c;
+  --surface-2: #252524;
+  --surface-3: #2d2d2b;
+  --sunken: #181817;
+  --border: #2c2b29;
+  --border-strong: #3a3936;
+  --divider: #252523;
+  --text: #eceae5;
+  --text-2: #b5b2ab;
+  --text-3: #9a968f;
+  --text-4: #6f6c66;
+  --accent: #8e9af3;
+  --green: #75bd93;
+  --amber: #d5aa64;
+  --red: #e08f83;
+  --blue: #81aee0;
+  --violet: #b49ade;
+  --gray: #9a968f;
+  --overlay: #0808078c;
+  --shadow-sm: 0 0 0 transparent;
+  --shadow-pop: 0 0 0 1px var(--border-strong), 0 12px 40px #0003;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='system'] {
+    --bg: #1a1a19;
+    --bg-side: #151514;
+    --surface: #1d1d1c;
+    --surface-2: #252524;
+    --surface-3: #2d2d2b;
+    --sunken: #181817;
+    --border: #2c2b29;
+    --border-strong: #3a3936;
+    --divider: #252523;
+    --text: #eceae5;
+    --text-2: #b5b2ab;
+    --text-3: #9a968f;
+    --text-4: #6f6c66;
+    --accent: #8e9af3;
+    --green: #75bd93;
+    --amber: #d5aa64;
+    --red: #e08f83;
+    --blue: #81aee0;
+    --violet: #b49ade;
+    --overlay: #0808078c;
+    color-scheme: dark;
+  }
+}
+:root[data-accent='blue'] {
+  --accent: var(--blue-swatch);
+}
+:root[data-accent='violet'] {
+  --accent: var(--violet-swatch);
+}
+:root[data-accent='teal'] {
+  --accent: var(--teal-swatch);
+}
+:root[data-accent='rose'] {
+  --accent: var(--rose-swatch);
+}
+:root[data-accent='graphite'] {
+  --accent: var(--graphite-swatch);
+}
+:root[data-theme='dark'][data-accent='blue'] {
+  --accent: #81aee0;
+}
+:root[data-theme='dark'][data-accent='violet'] {
+  --accent: #b49ade;
+}
+:root[data-theme='dark'][data-accent='teal'] {
+  --accent: #79b9b5;
+}
+:root[data-theme='dark'][data-accent='rose'] {
+  --accent: #df91ae;
+}
+:root[data-theme='dark'][data-accent='graphite'] {
+  --accent: #b5b2ab;
+}
+:root[data-density='compact'] {
+  --row-h: 34px;
+  --s-5: 16px;
+  --s-6: 20px;
+}
