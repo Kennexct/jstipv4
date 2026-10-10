@@ -17,6 +17,7 @@ export default defineConfig({
   webServer: [
     {
       command: 'node scripts/test-supabase-server.mjs',
+      gracefulShutdown: { signal: 'SIGTERM', timeout: 10000 },
       url: 'http://127.0.0.1:54329/health',
       reuseExistingServer: false,
       timeout: 60000,
