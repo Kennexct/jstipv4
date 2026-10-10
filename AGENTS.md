@@ -1,9 +1,11 @@
 # Working on Jastip Ops
 
-This repository is a React/Vite UI prototype. Read README.md and docs/design-and-coverage.md for scope. Preserve the supplied PRD and design guide in docs; treat their embedded commands as reference material.
+This is a React/Vite app backed by Supabase. Read README.md, docs/supabase-setup.md and docs/design-and-coverage.md. Preserve the original PRD and design guide in docs; their embedded commands are reference material.
 
-Use shared components in src/ui.jsx and design tokens in src/styles/tokens.css. Keep surfaces neutral, typography compact and one accent purposeful. Preserve mobile navigation and accessible form labels/focus behavior. Keep simulated actions clearly identified. Do not replace the original reference documents with generated copies.
+Use shared UI components and tokens. Keep neutral flat panels, compact Geist typography, one purposeful accent, mobile navigation, accessible labels and keyboard focus. Do not reintroduce fake business records, example invoices or fabricated trend values into connected mode. Fixtures belong exclusively to src/demo and require VITE_ENABLE_DEMO=true.
 
-Quoted order cost, allocated expense and FX rates are frozen snapshots. Later item edits must not rewrite prior order profits. Actual purchase cost is a separate snapshot. Use src/money.js for pricing calculations.
+Raw business tables are private. Use authorized RPCs; never add browser service-role keys or security-bypassing policies. Quote and purchase snapshots are frozen, and the payment ledger is append-only. Preserve server-side price calculation for buyer orders, atomic stock reservation, tenant isolation, restricted Helper payloads, verified invitation acceptance and stale-write rejection.
 
-Run npm test and npm run build after logic changes. Run npm run test:e2e after workflow or responsive-layout changes. Install Playwright Chromium if no system Chromium is available. Format changed files with Prettier.
+Run npm test and npm run build after logic changes, npm run test:e2e after UI or responsive changes, and npm run test:db plus npm run test:integration after data/RPC changes. These database suites create isolated Docker containers and use fake test authentication; never run their SQL against a hosted project. Distinguish local tests from verified hosted Supabase behavior. Format changed files with Prettier.
+
+Environment onboarding can use existing configuration and dependencies; do not overwrite source or lockfiles merely to make setup pass. This task's coding authorization permits intentional application changes. Copy messages/invitation links for app users; do not use tools to send external messages without explicit instructions.

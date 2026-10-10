@@ -5,6 +5,7 @@ import '@fontsource/geist/latin-500.css';
 import '@fontsource/geist/latin-600.css';
 import '@fontsource/geist-mono/latin-400.css';
 import { Provider, useOps } from './store';
+import { ConnectionGate } from './auth';
 import { Overview, Orders, Items, Requests, Trips, Purchasing, Reports, Customers } from './seller';
 import { Billing, Settings, Welcome, Storefront, Admin } from './workspaces';
 import { Dialog, DetailDrawer, CommandPalette } from './dialogs';
@@ -46,11 +47,19 @@ function App() {
     screenState,
     setScreenState,
     setData,
+    connection,
+    demoMode,
+    session,
+    signOut,
+    pending,
+    reload,
+    exitSupport,
   } = useOps();
   const [notifications, setNotifications] = useState(false);
+  if (!demoMode && (connection !== 'ready' || page === 'Recovery')) return <ConnectionGate />;
   const open = data.orders.filter((o) => !['Cancelled', 'Delivered'].includes(o.status)),
-    pending = data.orders.filter((o) => o.status === 'Requested'),
-    plan = planDetails.find((p) => p.name === data.plan);
+    requests = data.orders.filter((o) => o.status === 'Requested'),
+    plan = planDetails.find((p) => p.name === data.plan) || planDetails[0];
   const navs =
     mode === 'admin'
       ? ['Metrics', 'Merchants', 'Moderation', 'Audit']
@@ -73,7 +82,7 @@ function App() {
       ) : (
         <div className="app-shell">
           {mobile && <div className="sidebar-scrim" onClick={() => setMobile(false)} />}
-          <aside className={`sidebar ${mobile ? 'mobile-open' : ''}`}>
+          <aside className={`sidebar ${mobile ? 'open' : ''}`}>
             <button className="brand" onClick={() => navigate('Overview')}>
               <span className="brand-symbol">
                 <I name="ShoppingBag" size={19} />
@@ -84,7 +93,7 @@ function App() {
               <small>workspace</small>
             </button>
             <button className="workspace-switch" onClick={() => setDialog({ type: 'workspace' })}>
-              <Avatar name="Rina Kusuma" />
+              <Avatar name={session?.user?.user_metadata?.name || data.shop.name} />
               <div>
                 <strong>{mode === 'admin' ? 'Platform console' : data.shop.name}</strong>
                 <small>{mode === 'admin' ? 'Platform owner' : data.plan + ' workspace'}</small>
@@ -109,8 +118,12 @@ function App() {
                     <I name={navIcons[p]} />
                     <span>{p}</span>
                     {p === 'Orders' && <span className="nav-count">{open.length}</span>}
-                    {p === 'Requests' && pending.length > 0 && <i className="nav-dot" />}
-                    {p === 'Moderation' && <span className="nav-count">1</span>}
+                    {p === 'Requests' && requests.length > 0 && <i className="nav-dot" />}
+                    {p === 'Moderation' && (
+                      <span className="nav-count">
+                        {demoMode ? 1 : data.reports.filter((r) => r.status === 'Open').length}
+                      </span>
+                    )}
                   </button>
                 ))}
             </nav>
@@ -153,6 +166,12 @@ function App() {
               </>
             )}
             <div className="sidebar-footer">
+              {!demoMode && (
+                <button className="nav-item" onClick={signOut}>
+                  <I name="LogOut" />
+                  <span>Sign out</span>
+                </button>
+              )}
               {mode === 'seller' && (
                 <div className="plan-note">
                   <div>
@@ -187,9 +206,9 @@ function App() {
                 <span>Settings</span>
               </button>
               <button className="profile" onClick={() => setDialog({ type: 'workspace' })}>
-                <Avatar name="Rina Kusuma" />
+                <Avatar name={session?.user?.user_metadata?.name || data.shop.name} />
                 <div>
-                  <strong>Rina Kusuma</strong>
+                  <strong>{demoMode ? 'Rina Kusuma' : session?.user?.email}</strong>
                   <small>{role}</small>
                 </div>
                 <I name="ChevronsUpDown" size={13} />
@@ -217,6 +236,11 @@ function App() {
                 </strong>
               </div>
               <div className="topbar-actions">
+                {!demoMode && (
+                  <button className="text-btn" disabled={pending} onClick={reload}>
+                    {pending ? 'Saving…' : 'Refresh'}
+                  </button>
+                )}
                 <button className="top-search" onClick={() => setPalette(true)}>
                   <I name="Search" size={14} />
                   <span>Search</span>
@@ -246,7 +270,7 @@ function App() {
                 >
                   <I name={data.preferences.theme === 'dark' ? 'Sun' : 'Moon'} />
                 </button>
-                <Avatar name="Rina Kusuma" small />
+                <Avatar name={session?.user?.user_metadata?.name || data.shop.name} small />
               </div>
               {notifications && (
                 <div className="notification-pop">
@@ -259,7 +283,7 @@ function App() {
                   >
                     <i className="nav-dot" />
                     <div>
-                      <strong>{pending.length} new order requests</strong>
+                      <strong>{requests.length} new order requests</strong>
                       <p>Your customers found something they love.</p>
                       <small>Today</small>
                     </div>
@@ -284,13 +308,7 @@ function App() {
               <div className="support-banner">
                 <I name="Eye" size={15} />
                 <span>Read-only support view · {data.shop.name}</span>
-                <button
-                  className="text-btn"
-                  onClick={() => {
-                    setSupport(false);
-                    navigate('Merchants');
-                  }}
-                >
+                <button className="text-btn" onClick={exitSupport}>
                   Exit support view <I name="X" size={13} />
                 </button>
               </div>
@@ -348,7 +366,11 @@ function App() {
             <footer className="app-footer">
               <span>
                 <i className="sync-dot" />
-                Demo workspace · Saved locally
+                {demoMode
+                  ? 'Demo workspace · Saved locally'
+                  : pending
+                    ? 'Saving to database…'
+                    : 'Connected to Supabase'}
               </span>
               <span>Made for the journey.</span>
             </footer>
@@ -398,8 +420,15 @@ function App() {
     </>
   );
 }
-createRoot(document.getElementById('root')).render(
-  <Provider>
-    <App />
-  </Provider>,
-);
+async function start() {
+  const initialSeed =
+    import.meta.env.VITE_ENABLE_DEMO === 'true'
+      ? (await import('./demo/fixtures')).seed
+      : undefined;
+  createRoot(document.getElementById('root')).render(
+    <Provider initialSeed={initialSeed}>
+      <App />
+    </Provider>,
+  );
+}
+start();

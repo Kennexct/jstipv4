@@ -5,7 +5,7 @@ export default defineConfig({
   testMatch: '*.spec.js',
   workers: 1,
   use: {
-    baseURL: 'http://127.0.0.1:3000',
+    baseURL: 'http://127.0.0.1:3001',
     headless: true,
     launchOptions: {
       executablePath:
@@ -14,6 +14,11 @@ export default defineConfig({
       args: ['--no-sandbox'],
     },
   },
-  webServer: { command: 'npm run dev', url: 'http://127.0.0.1:3000', reuseExistingServer: true },
+  webServer: {
+    command: 'npm run dev -- --port 3001',
+    env: { VITE_ENABLE_DEMO: 'true' },
+    url: 'http://127.0.0.1:3001',
+    reuseExistingServer: true,
+  },
   reporter: 'list',
 });

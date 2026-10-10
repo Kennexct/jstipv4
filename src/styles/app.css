@@ -3607,3 +3607,125 @@ tfoot td {
 :root[data-motion='reduce'] .store-product:hover .product-art {
   transform: none;
 }
+.auth-shell {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+}
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px;
+}
+.auth-brand {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 32px;
+}
+.auth-card h1 {
+  font-size: 23px;
+  margin-bottom: 12px;
+}
+.auth-card > p {
+  color: var(--text-3);
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+.auth-card form > .btn {
+  width: 100%;
+  margin-top: 8px;
+}
+.auth-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 20px;
+}
+.auth-message {
+  color: var(--green);
+  font-size: 12px;
+  margin: 12px 0;
+}
+.auth-card .callout {
+  margin-bottom: 20px;
+}
+.live-panel {
+  padding: 24px;
+  margin-bottom: 24px;
+}
+.live-panel > p {
+  color: var(--text-3);
+  margin: 16px 0;
+}
+.live-panel .message-actions {
+  margin-top: 16px;
+}
+.manual-invoice {
+  padding: 16px;
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 12px 0;
+}
+.no-photo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--text-3);
+  background: var(--surface-2);
+}
+.no-photo span {
+  font-size: 12px;
+}
+.private-token {
+  flex-wrap: wrap;
+}
+.private-token strong {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  font-size: 12px;
+}
+.auth-card pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.auth-card > .text-btn {
+  margin-top: 20px;
+}
+.reference-photos {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.reference-photos img {
+  width: 110px;
+  height: 110px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--sunken);
+}
+.table-wrap td.mono {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.store-brand h2,
+.store-brand span,
+.workspace-switch strong,
+.item-card h3 {
+  overflow-wrap: anywhere;
+}
+.live-chart .chart-y {
+  justify-content: space-between;
+}

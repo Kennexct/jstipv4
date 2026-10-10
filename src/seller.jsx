@@ -20,7 +20,7 @@ import {
   ProductArt,
 } from './ui';
 export function OrdersTable({ orders, compact = false, selected = [], onSelect }) {
-  const { setDrawer } = useOps();
+  const { setDrawer, demoMode } = useOps();
   return (
     <div className="table-wrap">
       <table>
@@ -32,7 +32,15 @@ export function OrdersTable({ orders, compact = false, selected = [], onSelect }
                   type="checkbox"
                   aria-label="Select all orders"
                   checked={orders.length > 0 && orders.every((o) => selected.includes(o.id))}
-                  onChange={(e) => onSelect(e.target.checked ? orders.map((o) => o.id) : [])}
+                  onChange={(e) =>
+                    onSelect(
+                      e.target.checked
+                        ? orders
+                            .filter((o) => demoMode || ['Requested', 'Quoted'].includes(o.status))
+                            .map((o) => o.id)
+                        : [],
+                    )
+                  }
                 />
               </th>
             )}
@@ -57,6 +65,7 @@ export function OrdersTable({ orders, compact = false, selected = [], onSelect }
                   <input
                     type="checkbox"
                     aria-label={'Select ' + o.id}
+                    disabled={!demoMode && !['Requested', 'Quoted'].includes(o.status)}
                     checked={selected.includes(o.id)}
                     onChange={(e) =>
                       onSelect(
@@ -113,6 +122,7 @@ export function Overview() {
     data: { orders, trips, items },
     navigate,
     setDialog,
+    demoMode,
   } = useOps();
   const live = orders.filter((o) => o.status !== 'Cancelled'),
     revenue = live.reduce((a, o) => a + o.total, 0),
@@ -123,8 +133,15 @@ export function Overview() {
   return (
     <>
       <Header
-        title="Good afternoon, Rina"
-        description="Saturday, 10 October 2026 · Here’s how your business is doing."
+        title={demoMode ? 'Good afternoon, Rina' : 'Your workspace at a glance'}
+        description={
+          new Date().toLocaleDateString('en-GB', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+          }) + ' · Here’s how your business is doing.'
+        }
       >
         <Button icon="ExternalLink" onClick={() => navigate('Storefront')}>
           View storefront
@@ -138,7 +155,7 @@ export function Overview() {
           {
             label: 'Total revenue',
             value: money(revenue, true),
-            caption: '+18.6% · illustrative comparison',
+            caption: demoMode ? '+18.6% · illustrative comparison' : 'Non-cancelled orders',
             tone: 'green',
             icon: 'Wallet',
           },
@@ -179,15 +196,15 @@ export function Overview() {
         <section className="panel revenue-panel">
           <div className="panel-head">
             <h2>Revenue overview</h2>
-            <span className="micro muted">October · Sample trend</span>
+            <span className="micro muted">
+              {demoMode ? 'October · Sample trend' : 'Saved order totals'}
+            </span>
           </div>
           <div className="chart-summary">
             <strong>{money(revenue)}</strong>
-            <span className="green">
-              <I name="ArrowUpRight" size={13} />
-              18.6%
+            <span className="muted">
+              {demoMode ? '18.6% vs. last month · sample' : 'Non-cancelled orders · all time'}
             </span>
-            <span className="muted">vs. last month</span>
           </div>
           <RevenueChart />
         </section>
@@ -232,7 +249,7 @@ export function Overview() {
                 <Progress value={t.budget ? (t.actual / t.budget) * 100 : 0} />
                 <div className="trip-budget">
                   <span>Budget used</span>
-                  <span>{Math.round((t.actual / t.budget) * 100)}%</span>
+                  <span>{Math.round(t.budget ? (t.actual / t.budget) * 100 : 0)}%</span>
                 </div>
               </button>
             ))}
@@ -260,7 +277,7 @@ export function Overview() {
         <div>
           <I name="Globe" size={16} />
           <span>1 JPY = Rp 105</span>
-          <small>Rate snapshot · 10 Oct 2026</small>
+          <small>Exchange rates are set per trip</small>
           <button className="text-btn" onClick={() => navigate('Settings')}>
             Manage rates <I name="ArrowUpRight" size={12} />
           </button>
@@ -331,7 +348,9 @@ export function Orders() {
                 (d) => ({
                   ...d,
                   orders: d.orders.map((o) =>
-                    selected.includes(o.id) ? { ...o, status: 'Confirmed' } : o,
+                    selected.includes(o.id) && ['Requested', 'Quoted'].includes(o.status)
+                      ? { ...o, status: 'Confirmed' }
+                      : o,
                   ),
                 }),
                 'Selected orders confirmed.',
@@ -496,6 +515,13 @@ export function Requests() {
                 {o.name} · {o.qty} items · {o.source}
               </span>
               {o.note && <p>“{o.note}”</p>}
+              {o.photos?.length > 0 && (
+                <div className="reference-photos">
+                  {o.photos.map((photo, index) => (
+                    <img key={index} src={photo} alt={'Buyer reference ' + (index + 1)} />
+                  ))}
+                </div>
+              )}
               {o.link && (
                 <a href={o.link} target="_blank" rel="noreferrer">
                   Reference link
@@ -527,6 +553,20 @@ export function Trips() {
     support,
   } = useOps();
   const [id, setId] = useState(sessionStorage.getItem('jo-trip') || 'tokyo');
+  if (!trips.length)
+    return (
+      <>
+        <Header title="Trips" description="Create a trip before adding items and orders.">
+          <Button primary onClick={() => setDialog({ type: 'trip' })}>
+            New trip
+          </Button>
+        </Header>
+        <Empty
+          title="Plan your first trip"
+          text="Add your destination, dates and budget to get started."
+        />
+      </>
+    );
   const t = trips.find((t) => t.id === id) || trips[0],
     lines = budgets.filter((b) => b.trip === t.id),
     os = orders.filter((o) => o.trip === t.id && o.status !== 'Cancelled'),
@@ -603,7 +643,7 @@ export function Trips() {
             {
               label: 'Actual spend',
               value: money(t.actual, true),
-              caption: `${t.budget ? Math.round((t.actual / t.budget) * 100) : 0}% of planned budget`,
+              caption: `${t.budget ? Math.round(t.budget ? (t.actual / t.budget) * 100 : 0) : 0}% of planned budget`,
             },
             {
               label: 'Allocation / item',
@@ -756,6 +796,8 @@ export function Purchasing() {
     data: { orders, items, trips },
     setDialog,
     updateOrder,
+    role,
+    demoMode,
   } = useOps();
   const [trip, setTrip] = useState('all');
   const list = orders.filter(
@@ -792,6 +834,7 @@ export function Purchasing() {
                 <input
                   type="checkbox"
                   aria-label={'Mark ' + o.item + ' purchased'}
+                  disabled={!demoMode && (role === 'Helper' || o.status === 'Purchased')}
                   checked={o.status === 'Purchased'}
                   onChange={(e) =>
                     e.target.checked
@@ -805,7 +848,11 @@ export function Purchasing() {
                     {o.qty} × · {o.name} · {o.id}
                   </small>
                 </div>
-                <span className="muted">{money(o.quotedCost)} estimated</span>
+                <span className="muted">
+                  {role === 'Helper'
+                    ? 'Manager records purchase cost'
+                    : money(o.quotedCost) + ' estimated'}
+                </span>
                 <Badge status={o.status} />
               </div>
             ))}
@@ -826,15 +873,21 @@ export function Reports() {
     exportCsv,
   } = useOps();
   const [trip, setTrip] = useState('all'),
-    [period, setPeriod] = useState('October 2026'),
+    [period, setPeriod] = useState('All time'),
     [group, setGroup] = useState('By trip');
   const list = orders.filter(
     (o) =>
       o.status !== 'Cancelled' &&
       (trip === 'all' || o.trip === trip) &&
       (period === 'All time' ||
-        (period === 'October 2026' && o.date.includes('Oct')) ||
-        (period === 'September 2026' && o.date.includes('Sep'))),
+        (period === 'This month' &&
+          (o.createdAt || o.date).startsWith(new Date().toISOString().slice(0, 7))) ||
+        (period === 'Previous month' &&
+          (o.createdAt || o.date).startsWith(
+            new Date(new Date().getFullYear(), new Date().getMonth() - 1, 15)
+              .toISOString()
+              .slice(0, 7),
+          ))),
   );
   const revenue = list.reduce((a, o) => a + o.total, 0),
     cost = list.reduce((a, o) => a + (o.actualCost ?? o.quotedCost) * o.qty, 0),
@@ -877,8 +930,8 @@ export function Reports() {
           value={period}
           onChange={(e) => setPeriod(e.target.value)}
         >
-          <option>October 2026</option>
-          <option>September 2026</option>
+          <option>This month</option>
+          <option>Previous month</option>
           <option>All time</option>
         </select>
         <TripFilter trips={trips} value={trip} onChange={setTrip} />

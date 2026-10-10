@@ -113,7 +113,7 @@ test('appearance settings persist and read-only support prevents mutations', asy
   await page.getByRole('button', { name: 'Post item' }).click();
   await expect(page.locator('.form-error')).toContainText('read-only');
   const found = await page.evaluate(() =>
-    JSON.parse(localStorage.getItem('jastip-ops-v1')).items.some(
+    JSON.parse(localStorage.getItem('jastip-ops-demo-v1')).items.some(
       (i) => i.name === 'Blocked support edit',
     ),
   );

@@ -1,6 +1,10 @@
+import { demoMode } from './lib/supabase';
+import { LiveRevenueChart } from './charts';
 import React, { useId, useEffect, useRef } from 'react';
 import {
   Circle,
+  Image,
+  LogOut,
   X,
   LayoutDashboard,
   Inbox,
@@ -68,6 +72,8 @@ import {
 } from 'lucide-react';
 const icons = {
   Circle,
+  Image,
+  LogOut,
   X,
   LayoutDashboard,
   Inbox,
@@ -371,6 +377,7 @@ export function Overlay({ children, onClose, drawer = false, label, title }) {
   );
 }
 export function RevenueChart() {
+  if (!demoMode) return <LiveRevenueChart />;
   return (
     <>
       <div className="revenue-chart">
@@ -420,10 +427,17 @@ export function RevenueChart() {
     </>
   );
 }
-export function ProductArt({ item, type = item?.image || 'lotion', photo = 0 }) {
+export function ProductArt({ item, type = item?.image || 'none', photo = 0 }) {
   if (item?.photos?.length)
     return (
       <img className="item-photo" src={item.photos[photo] || item.photos[0]} alt={item.name} />
+    );
+  if (type === 'none')
+    return (
+      <div className="product-art no-photo">
+        <I name="Image" size={24} />
+        <span>No photo yet</span>
+      </div>
     );
   return (
     <div className={`product-art art-${type}`}>

@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { useOps } from './store';
-import { seed, orderStatuses, planDetails } from './data';
+import { orderStatuses, planDetails } from './data';
+import { recordId, today } from './lib/records';
+import { placePublicOrder, trackPublicOrder, inviteMember, proofUrl } from './lib/repository';
+import { rpc } from './lib/supabase';
+import { ManualInvoice } from './live-workspaces';
 import { money, margin, rates, allocate, orderProfit } from './money';
 import {
   I,
@@ -40,7 +44,11 @@ export function DetailDrawer() {
     navigate,
     setSupport,
     support,
+    demoMode,
+    openSupport,
+    announce,
   } = useOps();
+  const [invoiceOpen, setInvoiceOpen] = useState(false);
   const o = data.orders.find((o) => o.id === drawer.id),
     m = data.merchants.find((m) => m.id === drawer.id),
     item = data.items.find((i) => i.id === o?.itemId);
@@ -64,7 +72,8 @@ export function DetailDrawer() {
               <Avatar name={o.name} />
               <h2>{o.name}</h2>
               <p>
-                {o.source} order · {o.date} 2026
+                {o.source} order · {o.date}
+                {demoMode ? ' 2026' : ''}
               </p>
             </div>
             <Badge status={o.status} />
@@ -148,7 +157,22 @@ export function DetailDrawer() {
               </div>
             </div>
             {o.proof && (
-              <a className="proof-attached" href={o.proof.preview} download={o.proof.name}>
+              <a
+                className="proof-attached"
+                href={o.proof.preview || '#'}
+                onClick={async (e) => {
+                  if (!demoMode) {
+                    e.preventDefault();
+                    try {
+                      const url = await proofUrl(o.proof);
+                      window.open(url, '_blank', 'noopener,noreferrer');
+                    } catch (error) {
+                      announce(error.message);
+                    }
+                  }
+                }}
+                download={o.proof.name}
+              >
                 <I name="Paperclip" size={13} />
                 {o.proof.name}
               </a>
@@ -180,7 +204,12 @@ export function DetailDrawer() {
               <dt>Address</dt>
               <dd>{o.address}</dd>
               <dt>Delivery window</dt>
-              <dd>23–27 October 2026</dd>
+              <dd>
+                {demoMode
+                  ? '23–27 October 2026'
+                  : data.trips.find((t) => t.id === (o?.trip || initial?.trip))?.dates ||
+                    'Ask your merchant'}
+              </dd>
             </dl>
           </section>
           <section className="drawer-section">
@@ -318,40 +347,38 @@ export function DetailDrawer() {
           <section className="drawer-section">
             <h3>Support access</h3>
             <p className="muted">
-              Read-only access to the seeded seller workspace. This is a demonstration, not tenant
-              authentication.
+              Read-only access to this merchant’s workspace. Support actions are audited.
             </p>
-            <Button
-              icon="Eye"
-              onClick={() => {
-                change((d) => d, `Read-only support session opened for ${m.name}.`);
-                setSupport(true);
-                navigate('Overview');
-              }}
-            >
+            <Button icon="Eye" onClick={() => openSupport(m)}>
               Open read-only support view
             </Button>
           </section>
           <section className="drawer-section">
             <h3>Billing actions</h3>
+            {invoiceOpen && <ManualInvoice merchant={m} onDone={() => setInvoiceOpen(false)} />}
             <div className="message-actions">
-              <Button
-                icon="RotateCw"
-                onClick={() =>
-                  change(
-                    (d) => ({
-                      ...d,
-                      notes: [
-                        { type: 'retry', merchant: m.id, date: new Date().toISOString() },
-                        ...d.notes,
-                      ],
-                    }),
-                    `Payment retry recorded for ${m.name} in this demo.`,
-                  )
-                }
-              >
-                Retry payment
-              </Button>
+              {!demoMode && (
+                <Button onClick={() => setInvoiceOpen((v) => !v)}>Record manual invoice</Button>
+              )}
+              {demoMode && (
+                <Button
+                  icon="RotateCw"
+                  onClick={() =>
+                    change(
+                      (d) => ({
+                        ...d,
+                        notes: [
+                          { type: 'retry', merchant: m.id, date: new Date().toISOString() },
+                          ...d.notes,
+                        ],
+                      }),
+                      `Payment retry recorded for ${m.name} in this demo.`,
+                    )
+                  }
+                >
+                  Retry payment
+                </Button>
+              )}
               <Button icon="FileText" onClick={() => setDialog({ type: 'refund', merchant: m })}>
                 Add refund note
               </Button>
@@ -387,6 +414,10 @@ export function Dialog() {
     updateOrder,
     support,
     role,
+    demoMode,
+    pending,
+    reload,
+    selectWorkspace,
   } = useOps();
   const [step, setStep] = useState(original.type),
     [error, setError] = useState(''),
@@ -406,11 +437,11 @@ export function Dialog() {
     [proof, setProof] = useState(null);
   const [f, setF] = useState({
     name: initial?.name || order?.item || '',
-    price: priced?.price || 3000,
-    currency: priced?.currency || initialTrip.currency,
+    price: priced?.price || (demoMode ? 3000 : ''),
+    currency: priced?.currency || initialTrip?.currency || 'JPY',
     markup: priced?.markup || 20,
     markupMode: priced?.markupMode || 'percent',
-    trip: initialTrip.id,
+    trip: initialTrip?.id || '',
     qty: original.type === 'item' ? initial?.qty || 1 : order?.qty || 1,
     status: initial?.status || 'Available',
     store: initial?.store || '',
@@ -434,15 +465,24 @@ export function Dialog() {
     expenseCurrency: 'IDR',
     city: '',
     hub: 'Jakarta',
-    start: '2026-11-02',
-    end: '2026-11-08',
-    budget: 6500000,
+    start: demoMode ? '2026-11-02' : today(),
+    end: demoMode ? '2026-11-08' : today(),
+    budget: demoMode ? 6500000 : 0,
+    units: 100,
     consent: false,
     code: '',
     memberRole: 'Helper',
   });
   const set = (k, v) => setF((prev) => ({ ...prev, [k]: v }));
-  const t = data.trips.find((t) => t.id === f.trip) || data.trips[0],
+  const t = data.trips.find((t) => t.id === f.trip) ||
+      data.trips[0] || {
+        id: '',
+        currency: 'JPY',
+        rate: 105,
+        actual: 0,
+        units: 0,
+        allocation: 'none',
+      },
     qty = Math.max(1, Number(f.qty)),
     rate = f.currency === t.currency ? t.rate : rates[f.currency],
     allocation = allocate(t, data.items, {
@@ -515,14 +555,40 @@ export function Dialog() {
     confirmation: 'Your order is in',
     'request-confirmation': 'Your request is in',
   };
-  const createOrder = (custom, buyer) => {
+  const requireSaved = async (promise) => {
+    if (!(await promise))
+      throw Error('The change was not saved. Please review the error and try again.');
+    return true;
+  };
+  const createOrder = async (custom, buyer) => {
     const i = initial || data.items.find((i) => i.id === f.itemId) || data.items[0];
     if (buyer && !custom && (qty > i.qty || i.status === 'Draft')) {
       setError(`Only ${i.qty} available. Choose a smaller quantity.`);
       return;
     }
-    const id =
-      'JO-' + (Math.max(1048, ...data.orders.map((o) => Number(o.id.split('-')[1]) || 0)) + 1);
+    if (buyer && !demoMode) {
+      const result = await placePublicOrder(data.shop.slug, {
+        name: f.customer,
+        phone: f.phone,
+        address: f.address,
+        qty,
+        itemId: custom ? null : i.id,
+        expectedPrice: custom ? null : i.selling,
+        item: custom ? f.name : i.name,
+        trip: custom ? f.trip : i.trip,
+        budget: Number(f.amount),
+        note: f.note,
+        link: f.link,
+        photos,
+        consent: f.consent,
+      });
+      setTracking({ ...result, name: f.customer });
+      setStep(custom ? 'request-confirmation' : 'confirmation');
+      return;
+    }
+    const id = demoMode
+      ? 'JO-' + (Math.max(1048, ...data.orders.map((o) => Number(o.id.split('-')[1]) || 0)) + 1)
+      : recordId('JO-');
     const o = {
       id,
       name: f.customer,
@@ -531,12 +597,14 @@ export function Dialog() {
       item: custom ? f.name : i.name,
       itemId: custom ? null : i.id,
       trip: custom ? f.trip : i.trip,
-      total: custom ? Number(f.amount) : i.selling * qty,
+      total: custom ? 0 : i.selling * qty,
+      budget: custom ? Number(f.amount) : null,
       qty,
       paid: 0,
       status: 'Requested',
       source: buyer ? 'Storefront' : f.source,
-      date: '10 Oct',
+      date: demoMode ? '10 Oct' : today(),
+      createdAt: new Date().toISOString(),
       note: f.note,
       link: f.link,
       photos: custom ? photos : [],
@@ -544,17 +612,19 @@ export function Dialog() {
       allocation: custom ? 0 : i.allocation,
       fxRate: custom ? null : i.rate,
     };
-    const saved = change(
-      (d) => ({
-        ...d,
-        orders: [o, ...d.orders],
-        items:
-          buyer && !custom
-            ? d.items.map((x) => (x.id === i.id ? { ...x, qty: x.qty - qty } : x))
-            : d.items,
-      }),
-      `${id} added for ${f.customer}.`,
-      { publicAction: buyer },
+    const saved = await requireSaved(
+      change(
+        (d) => ({
+          ...d,
+          orders: [o, ...d.orders],
+          items:
+            buyer && !custom
+              ? d.items.map((x) => (x.id === i.id ? { ...x, qty: x.qty - qty } : x))
+              : d.items,
+        }),
+        `${id} added for ${f.customer}.`,
+        { publicAction: buyer },
+      ),
     );
     if (saved) {
       if (buyer) {
@@ -563,245 +633,313 @@ export function Dialog() {
       } else close();
     }
   };
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     setError('');
-    if (support && !['order', 'buyer-request', 'report', 'track'].includes(step)) {
-      setError('This support session is read-only. Exit support view to edit.');
-      return;
-    }
-    if (step === 'item') {
-      if (t.status === 'Closed') {
-        setError('Choose an open trip. Closed trips are read-only.');
+    setBusy(true);
+    try {
+      if (!demoMode && original.baseRevision != null && original.baseRevision !== data.revision) {
+        throw Error(
+          'This workspace changed while the form was open. Reopen the form to use the latest values.',
+        );
+      }
+      if (support && !['order', 'buyer-request', 'report', 'track'].includes(step)) {
+        setError('This support session is read-only. Exit support view to edit.');
         return;
       }
-      const i = {
-        ...initial,
-        id: initial?.id || 'IT-' + Date.now(),
-        name: f.name,
-        trip: t.id,
-        price: Number(f.price),
-        currency: f.currency,
-        rate,
-        markup: Number(f.markup),
-        markupMode: f.markupMode,
-        selling: calc.selling,
-        cost: calc.purchase,
-        allocation,
-        qty: Number(f.qty),
-        status: f.status,
-        store: f.store,
-        category: f.category,
-        note: f.note,
-        deadline: f.deadline,
-        photos,
-        image: initial?.image || 'lotion',
-      };
-      if (
-        change(
+      if (step === 'item') {
+        if (t.status === 'Closed') {
+          setError('Choose an open trip. Closed trips are read-only.');
+          return;
+        }
+        const i = {
+          ...initial,
+          id: initial?.id || recordId('IT-'),
+          name: f.name,
+          trip: t.id,
+          price: Number(f.price),
+          currency: f.currency,
+          rate,
+          markup: Number(f.markup),
+          markupMode: f.markupMode,
+          selling: calc.selling,
+          cost: calc.purchase,
+          allocation,
+          qty: Number(f.qty),
+          status: f.status,
+          store: f.store,
+          category: f.category,
+          note: f.note,
+          deadline: f.deadline,
+          photos,
+          image: initial?.image || (demoMode ? 'lotion' : 'none'),
+        };
+        if (
+          await requireSaved(
+            change(
+              (d) => ({
+                ...d,
+                items: initial ? d.items.map((x) => (x.id === i.id ? i : x)) : [i, ...d.items],
+              }),
+              `${i.name} ${initial ? 'updated' : f.status === 'Draft' ? 'saved as a draft' : 'posted to ' + t.name}.`,
+            ),
+          )
+        )
+          close();
+      } else if (step === 'quote') {
+        await requireSaved(
+          updateOrder(order.id, {
+            total: calc.selling * order.qty,
+            quotedCost: calc.purchase,
+            allocation,
+            fxRate: rate,
+            status: 'Quoted',
+          }),
+        );
+        close();
+        await copy(
+          `Hi ${order.name.split(' ')[0]}, your quote for ${order.qty} × ${order.item} is ${money(calc.selling * order.qty)}. Reply to confirm. Order ${order.id}.`,
+        );
+      } else if (step === 'payment') {
+        const o = data.orders.find((o) => o.id === order.id);
+        if (Number(f.amount) <= 0 || Number(f.amount) > o.total - o.paid) {
+          setError('Enter an amount above zero and no more than the outstanding balance.');
+          return;
+        }
+        const paid = o.paid + Number(f.amount);
+        await requireSaved(
+          updateOrder(o.id, {
+            paid,
+            status: paid >= o.total ? 'Paid' : o.status,
+            proof: proof || o.proof,
+            payments: [
+              ...(o.payments || []),
+              {
+                amount: Number(f.amount),
+                method: f.paymentMethod,
+                date: demoMode ? '10 Oct 2026' : today(),
+                proof,
+              },
+            ],
+          }),
+        );
+        close();
+      } else if (step === 'purchase') {
+        const actualRate =
+          f.actualCurrency === 'IDR'
+            ? 1
+            : f.actualCurrency === t.currency
+              ? t.rate
+              : rates[f.actualCurrency];
+        await requireSaved(
+          updateOrder(order.id, {
+            status: 'Purchased',
+            actualCost: Math.round(f.actualPrice * actualRate),
+            purchaseFxRate: actualRate,
+          }),
+        );
+        close();
+      } else if (step === 'trip') {
+        const tr = {
+          id: recordId('TR-'),
+          name: f.name,
+          city: f.city,
+          hub: f.hub,
+          start: f.start,
+          end: f.end,
+          dates: `${new Date(f.start + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}–${new Date(f.end + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+          currency: f.currency,
+          rate: rates[f.currency],
+          budget: Number(f.budget),
+          actual: 0,
+          units: Number(f.units),
+          allocation: 'even',
+          status: 'Planning',
+        };
+        await requireSaved(
+          change((d) => ({ ...d, trips: [...d.trips, tr] }), `${tr.name} created.`),
+        );
+        sessionStorage.setItem('jo-trip', tr.id);
+        close();
+      } else if (step === 'budget') {
+        const tr = original.trip;
+        if (tr.status === 'Closed') {
+          setError('Closed trips are read-only.');
+          return;
+        }
+        const fx =
+          f.expenseCurrency === 'IDR'
+            ? 1
+            : f.expenseCurrency === tr.currency
+              ? tr.rate
+              : rates[f.expenseCurrency];
+        const b = {
+          id: original.budget?.id || recordId('EX-'),
+          trip: tr.id,
+          category: f.categoryBudget,
+          description: f.description,
+          planned: Math.round(f.planned * fx),
+          actual: Math.round(f.actual * fx),
+          currency: f.expenseCurrency,
+          rate: fx,
+          receipt: proof,
+        };
+        await requireSaved(
+          change(
+            (d) => ({
+              ...d,
+              budgets: original.budget
+                ? d.budgets.map((x) => (x.id === b.id ? b : x))
+                : [...d.budgets, b],
+              trips: d.trips.map((x) =>
+                x.id === tr.id
+                  ? {
+                      ...x,
+                      budget: x.budget + b.planned - (original.budget?.planned || 0),
+                      actual: x.actual + b.actual - (original.budget?.actual || 0),
+                    }
+                  : x,
+              ),
+            }),
+            `${b.category} expense saved.`,
+          ),
+        );
+        close();
+      } else if (step === 'order' || step === 'manual-order')
+        await createOrder(false, step === 'order');
+      else if (step === 'request' || step === 'buyer-request')
+        await createOrder(true, step === 'buyer-request');
+      else if (step === 'track' && !demoMode) {
+        setTracking(await trackPublicOrder(f.code.trim()));
+      } else if (step === 'track') {
+        const o = data.orders.find((o) => o.id.toLowerCase() === f.code.trim().toLowerCase());
+        if (o) setTracking(o);
+        else setError('We couldn’t find that order. Check the code, like JO-1048.');
+      } else if (step === 'plan' && !demoMode) {
+        const saved = await change(
           (d) => ({
             ...d,
-            items: initial ? d.items.map((x) => (x.id === i.id ? i : x)) : [i, ...d.items],
+            notes: [
+              { id: recordId(), type: 'plan-request', plan: original.plan, date: today() },
+              ...d.notes,
+            ],
           }),
-          `${i.name} ${initial ? 'updated' : f.status === 'Draft' ? 'saved as a draft' : 'posted to ' + t.name}.`,
-        )
-      )
+          `Requested ${original.plan} plan. The platform owner will review it.`,
+        );
+        if (saved) close();
+      } else if (step === 'plan') {
+        await requireSaved(
+          change(
+            (d) => ({ ...d, plan: original.plan }),
+            `${original.plan} plan activated in this demo.`,
+          ),
+        );
         close();
-    } else if (step === 'quote') {
-      updateOrder(order.id, {
-        total: calc.selling * order.qty,
-        quotedCost: calc.purchase,
-        allocation,
-        fxRate: rate,
-        status: 'Quoted',
-      });
-      copy(
-        `Hi ${order.name.split(' ')[0]}, your quote for ${order.qty} × ${order.item} is ${money(calc.selling * order.qty)}. Reply to confirm. Order ${order.id}.`,
-      );
-      close();
-    } else if (step === 'payment') {
-      const o = data.orders.find((o) => o.id === order.id);
-      if (Number(f.amount) <= 0 || Number(f.amount) > o.total - o.paid) {
-        setError('Enter an amount above zero and no more than the outstanding balance.');
-        return;
-      }
-      const paid = o.paid + Number(f.amount);
-      updateOrder(o.id, {
-        paid,
-        status: paid >= o.total ? 'Paid' : o.status,
-        proof: proof || o.proof,
-        payments: [
-          ...(o.payments || []),
-          { amount: Number(f.amount), method: f.paymentMethod, date: '10 Oct 2026', proof },
-        ],
-      });
-      close();
-    } else if (step === 'purchase') {
-      const actualRate =
-        f.actualCurrency === 'IDR'
-          ? 1
-          : f.actualCurrency === t.currency
-            ? t.rate
-            : rates[f.actualCurrency];
-      updateOrder(order.id, {
-        status: 'Purchased',
-        actualCost: Math.round(f.actualPrice * actualRate),
-        purchaseFxRate: actualRate,
-      });
-      close();
-    } else if (step === 'trip') {
-      const tr = {
-        id: 'trip-' + Date.now(),
-        name: f.name,
-        city: f.city,
-        hub: f.hub,
-        start: f.start,
-        end: f.end,
-        dates: `${new Date(f.start + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}–${new Date(f.end + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`,
-        currency: f.currency,
-        rate: rates[f.currency],
-        budget: Number(f.budget),
-        actual: 0,
-        units: 200,
-        allocation: 'even',
-        status: 'Planning',
-      };
-      change((d) => ({ ...d, trips: [...d.trips, tr] }), `${tr.name} created.`);
-      sessionStorage.setItem('jo-trip', tr.id);
-      close();
-    } else if (step === 'budget') {
-      const tr = original.trip;
-      if (tr.status === 'Closed') {
-        setError('Closed trips are read-only.');
-        return;
-      }
-      const fx =
-        f.expenseCurrency === 'IDR'
-          ? 1
-          : f.expenseCurrency === tr.currency
-            ? tr.rate
-            : rates[f.expenseCurrency];
-      const b = {
-        id: original.budget?.id || Date.now(),
-        trip: tr.id,
-        category: f.categoryBudget,
-        description: f.description,
-        planned: Math.round(f.planned * fx),
-        actual: Math.round(f.actual * fx),
-        currency: f.expenseCurrency,
-        rate: fx,
-        receipt: proof,
-      };
-      change(
-        (d) => ({
-          ...d,
-          budgets: original.budget
-            ? d.budgets.map((x) => (x.id === b.id ? b : x))
-            : [...d.budgets, b],
-          trips: d.trips.map((x) =>
-            x.id === tr.id
-              ? {
-                  ...x,
-                  budget: x.budget + b.planned - (original.budget?.planned || 0),
-                  actual: x.actual + b.actual - (original.budget?.actual || 0),
-                }
-              : x,
+      } else if (step === 'customer') {
+        await requireSaved(
+          change(
+            (d) => ({
+              ...d,
+              customers: [
+                ...d.customers,
+                { name: f.customer, phone: f.phone.replace(/\D/g, ''), address: f.address },
+              ],
+            }),
+            `${f.customer} added to the address book.`,
           ),
-        }),
-        `${b.category} expense saved.`,
-      );
-      close();
-    } else if (step === 'order' || step === 'manual-order') createOrder(false, step === 'order');
-    else if (step === 'request' || step === 'buyer-request')
-      createOrder(true, step === 'buyer-request');
-    else if (step === 'track') {
-      const o = data.orders.find((o) => o.id.toLowerCase() === f.code.trim().toLowerCase());
-      if (o) setTracking(o);
-      else setError('We couldn’t find that order. Check the code, like JO-1048.');
-    } else if (step === 'plan') {
-      change(
-        (d) => ({ ...d, plan: original.plan }),
-        `${original.plan} plan activated in this demo.`,
-      );
-      close();
-    } else if (step === 'customer') {
-      change(
-        (d) => ({
-          ...d,
-          customers: [
-            ...d.customers,
-            { name: f.customer, phone: f.phone.replace(/\D/g, ''), address: f.address },
-          ],
-        }),
-        `${f.customer} added to the address book.`,
-      );
-      close();
-    } else if (step === 'invite') {
-      change(
-        (d) => ({
-          ...d,
-          members: [...d.members, { email: f.phone, role: f.memberRole, status: 'Invited' }],
-        }),
-        `Invitation for ${f.phone} saved in this demo.`,
-      );
-      close();
-    } else if (step === 'invite-merchant') {
-      change(
-        (d) => ({
-          ...d,
-          merchants: [
-            ...d.merchants,
-            {
-              id: 'M-' + Date.now(),
-              name: f.name,
-              owner: f.customer,
-              email: f.phone,
-              plan: 'Pro',
-              status: 'Invited',
-              items: 0,
-              orders: 0,
-              revenue: 0,
-              trialDays: 14,
-            },
-          ],
-        }),
-        `${f.name} invitation added to the demo directory.`,
-      );
-      close();
-    } else if (step === 'suspend') {
-      change(
-        (d) => ({
-          ...d,
-          merchants: d.merchants.map((m) =>
-            m.id === original.merchant.id ? { ...m, status: 'Suspended', reason: f.note } : m,
+        );
+        close();
+      } else if (step === 'invite' && !demoMode) {
+        const link = await inviteMember(data.workspaceId, f.phone, f.memberRole);
+        await reload();
+        close();
+        await copy(link, 'Invitation link');
+      } else if (step === 'invite') {
+        await requireSaved(
+          change(
+            (d) => ({
+              ...d,
+              members: [...d.members, { email: f.phone, role: f.memberRole, status: 'Invited' }],
+            }),
+            `Invitation for ${f.phone} saved in this demo.`,
           ),
-        }),
-        `${original.merchant.name} suspended. Reason: ${f.note}`,
-      );
-      close();
-    } else if (step === 'refund' || step === 'report') {
-      change(
-        (d) => ({
-          ...d,
-          notes: [
-            {
-              type: step,
-              note: f.note,
-              merchant: original.merchant?.id || 'M-001',
-              date: '10 Oct 2026',
-            },
-            ...d.notes,
-          ],
-        }),
-        step === 'refund' ? 'Refund note saved.' : 'Storefront report submitted in this demo.',
-        { publicAction: step === 'report' },
-      );
-      close();
-    } else if (step === 'reset') {
-      setData(structuredClone(seed));
-      close();
-      announce('Demo workspace reset.');
-      navigate('Overview');
+        );
+        close();
+      } else if (step === 'invite-merchant') {
+        await requireSaved(
+          change(
+            (d) => ({
+              ...d,
+              merchants: [
+                ...d.merchants,
+                {
+                  id: recordId('M-'),
+                  name: f.name,
+                  owner: f.customer,
+                  email: f.phone,
+                  plan: 'Pro',
+                  status: 'Invited',
+                  items: 0,
+                  orders: 0,
+                  revenue: 0,
+                  trialDays: 14,
+                },
+              ],
+            }),
+            `${f.name} invitation added to the demo directory.`,
+          ),
+        );
+        close();
+      } else if (step === 'suspend') {
+        await requireSaved(
+          change(
+            (d) => ({
+              ...d,
+              merchants: d.merchants.map((m) =>
+                m.id === original.merchant.id ? { ...m, status: 'Suspended', reason: f.note } : m,
+              ),
+            }),
+            `${original.merchant.name} suspended. Reason: ${f.note}`,
+          ),
+        );
+        close();
+      } else if (step === 'report' && !demoMode) {
+        await rpc('jastip_report_store', { p_slug: data.shop.slug, p_note: f.note });
+        announce('Report submitted for review.');
+        close();
+      } else if (step === 'refund' || step === 'report') {
+        await requireSaved(
+          change(
+            (d) => ({
+              ...d,
+              notes: [
+                {
+                  type: step,
+                  note: f.note,
+                  merchant: original.merchant?.id || 'M-001',
+                  date: demoMode ? '10 Oct 2026' : today(),
+                },
+                ...d.notes,
+              ],
+            }),
+            step === 'refund' ? 'Refund note saved.' : 'Storefront report submitted in this demo.',
+            { publicAction: step === 'report' },
+          ),
+        );
+        close();
+      } else if (step === 'reset' && !demoMode) {
+        throw Error('Reset is available only in demo mode.');
+      } else if (step === 'reset') {
+        if (import.meta.env.VITE_ENABLE_DEMO === 'true')
+          setData(structuredClone((await import('./demo/fixtures')).seed));
+        close();
+        announce('Demo workspace reset.');
+        navigate('Overview');
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
     }
   };
   const tripSelect = (
@@ -1018,6 +1156,13 @@ export function Dialog() {
                     {initial && !photos.length && <ProductArt item={initial} />}
                   </div>
                 )}
+                {step === 'quote' && order?.photos?.length > 0 && (
+                  <div className="reference-photos">
+                    {order.photos.map((photo, index) => (
+                      <img key={index} src={photo} alt={'Buyer reference ' + (index + 1)} />
+                    ))}
+                  </div>
+                )}
                 <div className="capture-fields">
                   <Field label={step === 'quote' ? 'Requested item' : 'Item name'}>
                     <input
@@ -1119,9 +1264,14 @@ export function Dialog() {
                       <dt>Available</dt>
                       <dd>{initial.qty} items</dd>
                       <dt>Delivery</dt>
-                      <dd>23–27 October 2026</dd>
+                      <dd>
+                        {demoMode
+                          ? '23–27 October 2026'
+                          : data.trips.find((t) => t.id === (order?.trip || initial?.trip))
+                              ?.dates || 'Ask your merchant'}
+                      </dd>
                       <dt>Order by</dt>
-                      <dd>{initial.deadline || '18 October 2026'}</dd>
+                      <dd>{initial.deadline || 'Ask your merchant'}</dd>
                     </dl>
                     <Field label="Quantity">
                       <input
@@ -1250,7 +1400,12 @@ export function Dialog() {
                 </Field>
                 {step === 'buyer-request' && (
                   <label className="consent">
-                    <input type="checkbox" required />
+                    <input
+                      type="checkbox"
+                      required
+                      checked={f.consent}
+                      onChange={(e) => set('consent', e.target.checked)}
+                    />
                     <span>I agree to share these details with the merchant for this request.</span>
                   </label>
                 )}
@@ -1395,6 +1550,19 @@ export function Dialog() {
                       ))}
                     </select>
                   </Field>
+                  <Field
+                    label="Estimated total item units"
+                    hint="Used to divide trip expenses evenly across items."
+                  >
+                    <input
+                      required
+                      type="number"
+                      min="1"
+                      max="1000000"
+                      value={f.units}
+                      onChange={(e) => set('units', e.target.value)}
+                    />
+                  </Field>
                   <Field label="Planned budget (IDR)">
                     <input
                       required
@@ -1465,6 +1633,22 @@ export function Dialog() {
                     ))}
                   </select>
                 </Field>
+                {original.budget?.receipt && (
+                  <Button
+                    type="button"
+                    icon="Download"
+                    onClick={async () => {
+                      try {
+                        const url = await proofUrl(original.budget.receipt);
+                        await copy(url, 'Receipt link (expires in one minute)');
+                      } catch (e) {
+                        setError(e.message);
+                      }
+                    }}
+                  >
+                    Copy receipt download link
+                  </Button>
+                )}
                 <Field label="Receipt (optional)">
                   <input type="file" accept="image/*" onChange={receipt} />
                 </Field>
@@ -1484,7 +1668,11 @@ export function Dialog() {
                   </div>
                 ) : (
                   <>
-                    <p>Enter the short code from your order confirmation.</p>
+                    <p>
+                      {demoMode
+                        ? 'Enter the short code from your order confirmation.'
+                        : 'Enter the private tracking token from your confirmation.'}
+                    </p>
                     <Field label="Order code">
                       <input
                         required
@@ -1505,32 +1693,53 @@ export function Dialog() {
                 <h3>
                   {step === 'confirmation'
                     ? `Thanks, ${tracking.name.split(' ')[0]}. Your find is reserved.`
-                    : 'Rina will take a look on the next trip.'}
+                    : 'Your merchant will take a look on the next trip.'}
                 </h3>
                 <p>
                   {step === 'confirmation'
-                    ? 'Rina will reach out on WhatsApp to confirm availability and payment.'
+                    ? 'Your merchant will reach out on WhatsApp to confirm availability and payment.'
                     : 'You’ll receive a quote on WhatsApp when the item is found.'}
                 </p>
-                <div className="tracking-code">
-                  <small>Your order code</small>
-                  <strong className="mono">{tracking.id}</strong>
+                <div className="tracking-code private-token">
+                  <small>{demoMode ? 'Your order code' : 'Private tracking token'}</small>
+                  <strong className="mono">
+                    {demoMode ? tracking.id : tracking.trackingToken}
+                  </strong>
                   <button
                     type="button"
                     className="text-btn"
-                    onClick={() => copy(tracking.id, 'Order code')}
+                    onClick={() =>
+                      copy(demoMode ? tracking.id : tracking.trackingToken, 'Tracking token')
+                    }
                   >
                     <I name="Copy" size={14} />
                     Copy code
                   </button>
                 </div>
-                <p className="footnote">Keep this code to track your order. No account needed.</p>
+                <p className="footnote">
+                  Keep your private tracking token safe. No account needed.
+                </p>
               </div>
             )}
             {step === 'workspace' && (
               <div className="workspace-menu">
+                {!demoMode &&
+                  data.workspaceChoices?.length > 1 &&
+                  data.workspaceChoices.map((workspace) => (
+                    <button
+                      key={workspace.id}
+                      type="button"
+                      onClick={() => selectWorkspace(workspace.id)}
+                    >
+                      <I name="Store" />
+                      <div>
+                        <strong>{workspace.name}</strong>
+                        <small>{workspace.role} workspace</small>
+                      </div>
+                    </button>
+                  ))}
                 {[
-                  ['Overview', 'Rina’s travel finds', 'Seller workspace · ' + role, 'Store'],
+                  ['Overview', data.shop.name, 'Seller workspace · ' + role, 'Store'],
                   [
                     'Storefront',
                     'Public storefront',
@@ -1544,25 +1753,27 @@ export function Dialog() {
                     'ShieldCheck',
                   ],
                   ['Welcome', 'Start the walkthrough', 'Workspace → trip → first item', 'Compass'],
-                ].map(([p, title, desc, icon]) => (
-                  <button
-                    type="button"
-                    key={p}
-                    onClick={() => {
-                      navigate(p);
-                      close();
-                    }}
-                  >
-                    <span className="trip-glyph">
-                      <I name={icon} />
-                    </span>
-                    <div>
-                      <strong>{title}</strong>
-                      <small>{desc}</small>
-                    </div>
-                    <I name="ArrowRight" />
-                  </button>
-                ))}
+                ]
+                  .filter(([p]) => demoMode || p !== 'Merchants' || data.isAdmin)
+                  .map(([p, title, desc, icon]) => (
+                    <button
+                      type="button"
+                      key={p}
+                      onClick={() => {
+                        navigate(p);
+                        close();
+                      }}
+                    >
+                      <span className="trip-glyph">
+                        <I name={icon} />
+                      </span>
+                      <div>
+                        <strong>{title}</strong>
+                        <small>{desc}</small>
+                      </div>
+                      <I name="ArrowRight" />
+                    </button>
+                  ))}
               </div>
             )}
             {step === 'help' && (
@@ -1600,7 +1811,9 @@ export function Dialog() {
             {step === 'plan' && (
               <>
                 <Callout icon="CreditCard">
-                  This simulates checkout. No money will be charged.
+                  {demoMode
+                    ? 'Demo checkout. No money will be charged.'
+                    : 'Request this plan from the platform owner. Payment and activation are handled manually.'}
                 </Callout>
                 <Field label="Payment method">
                   <select>
@@ -1634,7 +1847,8 @@ export function Dialog() {
                   </select>
                 </Field>
                 <p className="footnote">
-                  Helpers cannot see margins or reports. Invitations are saved locally.
+                  Helpers cannot see margins or reports. Share the invitation link with the invited
+                  email address.
                 </p>
               </>
             )}
@@ -1718,7 +1932,7 @@ export function Dialog() {
               <Button
                 primary
                 type="submit"
-                disabled={busy}
+                disabled={busy || pending}
                 icon={step === 'quote' ? 'Copy' : step === 'item' ? 'ArrowUpRight' : undefined}
               >
                 {busy
@@ -1742,7 +1956,9 @@ export function Dialog() {
                               : step === 'track'
                                 ? 'Track order'
                                 : step === 'plan'
-                                  ? 'Activate demo plan'
+                                  ? demoMode
+                                    ? 'Activate demo plan'
+                                    : 'Request plan'
                                   : step === 'reset'
                                     ? 'Reset demo'
                                     : step === 'suspend'

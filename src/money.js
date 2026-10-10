@@ -41,7 +41,17 @@ export function orderProfit(o, actual = true) {
 }
 export function allocate(trip, items, { qty = 1, cost = 0, id } = {}) {
   if (trip.allocation === 'none') return 0;
-  if (trip.allocation === 'even') return Math.round(trip.actual / (trip.units + Number(qty)));
+  if (trip.allocation === 'even')
+    return Math.round(
+      trip.actual /
+        Math.max(
+          1,
+          Number(trip.units),
+          items
+            .filter((i) => i.trip === trip.id && i.id !== id)
+            .reduce((sum, i) => sum + Number(i.qty), 0) + Number(qty),
+        ),
+    );
   const total =
     items.filter((i) => i.trip === trip.id && i.id !== id).reduce((a, i) => a + i.cost * i.qty, 0) +
     cost * qty;

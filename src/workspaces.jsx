@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { useOps } from './store';
 import { money } from './money';
-import { seed, planDetails } from './data';
+import { planDetails } from './data';
+import { LiveBilling, LiveAdminSummary } from './live-workspaces';
+import { rpc } from './lib/supabase';
 import {
   I,
   Button,
@@ -20,7 +22,8 @@ import {
   ProductArt,
 } from './ui';
 export function Billing() {
-  const { data, exportCsv, setDialog } = useOps();
+  const { data, exportCsv, setDialog, demoMode } = useOps();
+  if (!demoMode) return <LiveBilling />;
   const plan = planDetails.find((p) => p.name === data.plan);
   return (
     <>
@@ -157,8 +160,21 @@ export function Billing() {
   );
 }
 export function Settings() {
-  const { data, change, setData, role, setRole, setDialog, navigate, setScreenState, support } =
-    useOps();
+  const {
+    data,
+    change,
+    setData,
+    role,
+    setRole,
+    setDialog,
+    navigate,
+    setScreenState,
+    support,
+    demoMode,
+    reload,
+    announce,
+    pending,
+  } = useOps();
   const [tab, setTab] = useState('Appearance');
   const p = data.preferences;
   const preference = (k, v) =>
@@ -275,17 +291,42 @@ export function Settings() {
                 <strong>{m.name || m.email}</strong>
                 <small>{m.email}</small>
               </div>
-              <Badge status={m.status || m.role} />
+              {!demoMode && role === 'Owner' && m.role !== 'Owner' ? (
+                <select
+                  aria-label={'Role for ' + (m.name || m.email)}
+                  value={m.role}
+                  disabled={pending || support}
+                  onChange={async (e) => {
+                    try {
+                      await rpc('jastip_set_member_role', {
+                        p_workspace: data.workspaceId,
+                        p_member: m.id,
+                        p_role: e.target.value,
+                      });
+                      await reload();
+                      announce('Team role updated.');
+                    } catch (error) {
+                      announce(error.message);
+                    }
+                  }}
+                >
+                  <option>Manager</option>
+                  <option>Helper</option>
+                </select>
+              ) : (
+                <Badge status={m.status || m.role} />
+              )}
             </div>
           ))}
           <div className="settings-row padded">
             <div>
-              <h3>Preview a role</h3>
+              <h3>{demoMode ? 'Preview a role' : 'Your role'}</h3>
               <p>Helpers manage orders but cannot see margin or reports.</p>
             </div>
             <select
               aria-label="Preview role"
               value={role}
+              disabled={!demoMode}
               onChange={(e) => setRole(e.target.value)}
             >
               <option>Owner</option>
@@ -346,6 +387,17 @@ export function Settings() {
           <Field label="Storefront slug">
             <input name="slug" required pattern="[a-z0-9-]+" defaultValue={data.shop.slug} />
           </Field>
+          <Field
+            label="WhatsApp contact (optional)"
+            hint="Include the country code. Buyers use this to contact you."
+          >
+            <input
+              name="contact"
+              type="tel"
+              pattern="[+0-9 ()-]{8,20}"
+              defaultValue={data.shop.contact || ''}
+            />
+          </Field>
           <Field label="About your shop">
             <textarea name="bio" defaultValue={data.shop.bio} />
           </Field>
@@ -355,16 +407,22 @@ export function Settings() {
         </form>
       )}
       <div className="settings-footer">
-        <Button icon="RotateCcw" onClick={() => setDialog({ type: 'reset' })}>
-          Reset demo data
-        </Button>
-        <span className="muted">Your changes are saved in this browser.</span>
+        {demoMode && (
+          <Button icon="RotateCcw" onClick={() => setDialog({ type: 'reset' })}>
+            Reset demo data
+          </Button>
+        )}
+        <span className="muted">
+          {demoMode
+            ? 'Your changes are saved in this browser.'
+            : 'Business data is saved to Supabase. Appearance preferences stay on this device.'}
+        </span>
       </div>
     </>
   );
 }
 export function Welcome() {
-  const { data, change, navigate, setDialog } = useOps();
+  const { data, change, navigate, setDialog, demoMode } = useOps();
   const [stage, setStage] = useState(0),
     [name, setName] = useState(data.shop.name);
   return (
@@ -384,9 +442,14 @@ export function Welcome() {
         </div>
         {stage === 0 ? (
           <form
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
-              if (change((d) => ({ ...d, shop: { ...d.shop, name } }), 'Your workspace is ready.'))
+              if (
+                await change(
+                  (d) => ({ ...d, shop: { ...d.shop, name } }),
+                  'Your workspace is ready.',
+                )
+              )
                 setStage(1);
             }}
           >
@@ -403,7 +466,11 @@ export function Welcome() {
                 <option>IDR · Indonesian rupiah</option>
               </select>
             </Field>
-            <Callout>Explore with sample data. Your Pro trial is simulated in this mockup.</Callout>
+            <Callout>
+              {demoMode
+                ? 'Explore with sample data.'
+                : 'Add a trip, then publish your first item to open your storefront.'}
+            </Callout>
             <Button primary type="submit" icon="ArrowRight">
               Continue
             </Button>
@@ -479,6 +546,7 @@ export function Storefront() {
     navigate,
     setDialog,
     copy,
+    demoMode,
   } = useOps();
   const [q, setQ] = useState(''),
     [trip, setTrip] = useState('all'),
@@ -500,7 +568,7 @@ export function Storefront() {
           <I name="Store" size={14} />
           Public storefront
         </span>
-        <span>{shop.slug}.jastip.app</span>
+        <span>{shop.slug}</span>
         <Button icon="ArrowLeft" onClick={() => navigate('Overview')}>
           Back to workspace
         </Button>
@@ -508,7 +576,7 @@ export function Storefront() {
       <div className="store-shell">
         <header className="store-header">
           <div className="store-brand">
-            <span className="store-monogram">r.</span>
+            <span className="store-monogram">{shop.name.slice(0, 1).toLowerCase()}.</span>
             <div>
               <h2>{shop.name}</h2>
               <span>Thoughtfully found. Happily brought home.</span>
@@ -521,7 +589,19 @@ export function Storefront() {
             </button>
             <button
               className="text-btn"
-              onClick={() => copy('Hi Rina, I have a question about your travel finds.')}
+              disabled={!shop.contact}
+              onClick={() =>
+                window.open(
+                  'https://wa.me/' +
+                    shop.contact.replace(/\D/g, '') +
+                    '?text=' +
+                    encodeURIComponent(
+                      `Hi ${shop.name}, I have a question about your travel finds.`,
+                    ),
+                  '_blank',
+                  'noopener,noreferrer',
+                )
+              }
             >
               <I name="MessageCircle" size={15} />
               Contact
@@ -539,11 +619,11 @@ export function Storefront() {
           <div className="store-trust">
             <span>
               <I name="Plane" size={14} />
-              Next delivery · 23–27 Oct
+              Next delivery · {trips[0]?.dates || 'Ask your merchant'}
             </span>
             <span>
               <I name="MapPin" size={14} />
-              Shipping from Jakarta
+              Shipping from {trips[0]?.hub || 'your merchant'}
             </span>
             <span>
               <I name="BadgeCheck" size={14} />
@@ -637,6 +717,8 @@ export function Admin() {
     setDialog,
     setDrawer,
     exportCsv,
+    demoMode,
+    copy,
   } = useOps();
   const [q, setQ] = useState(''),
     [status, setStatus] = useState('All'),
@@ -647,6 +729,7 @@ export function Admin() {
       (plan === 'All plans' || m.plan === plan) &&
       `${m.name} ${m.owner}`.toLowerCase().includes(q.toLowerCase()),
   );
+  if (!demoMode && ['Metrics', 'Moderation'].includes(page)) return <LiveAdminSummary />;
   if (page === 'Metrics')
     return (
       <>
@@ -662,7 +745,11 @@ export function Admin() {
               caption: '+12.8% · illustrative',
               tone: 'green',
             },
-            { label: 'Active merchants', value: '186', caption: '24 joined this month · sample' },
+            {
+              label: 'Active merchants',
+              value: demoMode ? '186' : merchants.filter((m) => m.status === 'Active').length,
+              caption: '24 joined this month · sample',
+            },
             {
               label: 'Activation rate',
               value: '62.4%',
@@ -782,13 +869,25 @@ export function Admin() {
         <Button icon="Download" onClick={() => exportCsv(list, 'merchants')}>
           Export
         </Button>
-        <Button primary icon="Plus" onClick={() => setDialog({ type: 'invite-merchant' })}>
-          Invite merchant
+        <Button
+          primary
+          icon="Plus"
+          onClick={() =>
+            demoMode
+              ? setDialog({ type: 'invite-merchant' })
+              : copy(location.origin + location.pathname + '#SignUp', 'Merchant sign-up link')
+          }
+        >
+          {demoMode ? 'Invite merchant' : 'Copy merchant sign-up link'}
         </Button>
       </Header>
       <Stats
         stats={[
-          { label: 'Total merchants', value: merchants.length, caption: 'Demo directory' },
+          {
+            label: 'Total merchants',
+            value: merchants.length,
+            caption: demoMode ? 'Demo directory' : 'Registered workspaces',
+          },
           {
             label: 'Active',
             value: merchants.filter((m) => m.status === 'Active').length,

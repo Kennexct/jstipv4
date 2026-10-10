@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { margin, orderProfit, allocate } from '../src/money.js';
-import { itemsSeed, ordersSeed } from '../src/data.js';
+import { itemsSeed, ordersSeed } from '../src/demo/fixtures.js';
 test('PRD pricing example includes trip allocation in profit', () => {
   const m = margin({ price: 3000, rate: 105, markup: 20, allocation: 20000 });
   assert.equal(m.purchase, 315000);
@@ -33,7 +33,7 @@ test('order profit stays frozen when item pricing changes; actual costs update i
 });
 test('expense allocation supports none, even and item value', () => {
   assert.equal(allocate({ allocation: 'none' }, []), 0);
-  assert.equal(allocate({ allocation: 'even', actual: 60000, units: 2 }, [], { qty: 1 }), 20000);
+  assert.equal(allocate({ allocation: 'even', actual: 60000, units: 3 }, [], { qty: 1 }), 20000);
   assert.equal(
     allocate(
       { allocation: 'value', actual: 60000, id: 't' },

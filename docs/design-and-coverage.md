@@ -1,38 +1,31 @@
-# Design and workflow coverage
+# Design and functional coverage
 
-The supplied PRD establishes product scope. The supplied design guide establishes visual direction. Embedded workflow commands in those documents are reference material; they do not authorize external actions. GitHub publication is authorized by the user's explicit request.
+The original PRD establishes scope and the supplied design guide establishes visual direction. Their embedded workflow commands are reference material. Current work replaces the browser-local prototype with Supabase-backed operations while preserving its visual system.
 
-## Visual system
+## Design
 
-Warm paper and charcoal themes, Geist typography, semantic neutral badges, a single configurable accent, hairline borders and restrained spacing. Shared tokens live in `src/styles/tokens.css`. The sidebar, four-part stats, dense tables, flat panels, drawers and capture forms follow the guide. Tablet navigation becomes a drawer; phones use a bottom bar, stacked tables and two-column product browsing. Motion honors OS preferences and the app's Reduce motion switch. Dialogs provide accessible labels, Escape handling, focus trapping and focus restoration; fields have associated labels and keyboard-visible focus.
+Warm paper/charcoal surfaces, Geist 400/500/600, restrained accents, neutral semantic badges, thin borders, dense tables and flat panels. Responsive navigation, stacked mobile tables, capture sheets, drawers and keyboard focus remain in place. Appearance preferences stay on the device. Real charts use saved orders; blank workspaces show empty states and no sample data.
 
-## Screens and connected workflows
+## Connected features
 
-| Area       | Included behavior                                                                                                                                                                  |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Overview   | Reactive totals, recent orders, active trips, review prompts, illustrative revenue trend                                                                                           |
-| Items      | Six compressed photos, trip/category/status/deadline, percent or fixed markup, multi-currency calculator, live allocation and margin, draft and duplication                        |
-| Orders     | Manual and storefront sources, search/filter, bulk confirmation, lifecycle status, frozen quote pricing, partial/full payment and image proof, address, copyable customer messages |
-| Requests   | Buyer or seller custom requests, reference photos/links, budget and quote using the shared calculator                                                                              |
-| Trips      | Planning/open/closed state, dates, budget expenses, planned/actual amounts, receipt, currency conversion, none/even/value allocation; closed item and budget edits are blocked     |
-| Purchasing | Paid order checklist grouped by store; actual purchase currency and cost snapshot                                                                                                  |
-| Reports    | Estimated/actual profit, period and trip filters, trip/item/customer grouping and CSV                                                                                              |
-| Customers  | Order-based directory, customer creation, search and CSV                                                                                                                           |
-| Settings   | Six accents, light/dark/system, compact density, reduced motion, state previews, workspace/store branding, role preview, currencies, reset                                         |
-| Billing    | Plan comparison, usage, simulated checkout and downloadable fixture invoice CSVs                                                                                                   |
-| Welcome    | Three-step shop, trip and first-item onboarding                                                                                                                                    |
-| Storefront | Search, filters, local gallery, availability, account-free consent/order/request forms, confirmation and status-only tracking                                                      |
-| Metrics    | Sample platform revenue, merchant lifecycle totals and attention queues                                                                                                            |
-| Merchants  | Directory, filters, invitations, plan/status/trial changes, read-only seeded support view, simulated payment retry, refund note and reasoned suspension                            |
-| Moderation | Example report review and merchant profile actions                                                                                                                                 |
-| Audit      | Browser-local log of merchant and seller changes                                                                                                                                   |
+| Area                | Implementation                                                                                                                                                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Authentication      | Supabase signup, login, session persistence, reset/recovery and logout; hosted email configuration required                                                             |
+| Workspaces          | Empty tenant creation, server membership, Starter defaults, plan quotas and audited settings                                                                            |
+| Items               | Compressed photos in Storage, availability, quantity, deadlines, manual FX rates, percent/fixed markup, live expense allocation and validated pricing                   |
+| Orders/requests     | Manual and public orders, server-priced public stock reservation, custom request budgets/photos/links, quotes, lifecycle validation and private tracking tokens         |
+| Payments/purchasing | Partial/full payment ledger, private proofs, actual cost and FX snapshot, protected quote/purchase history, ship/deliver and cancellation stock release before purchase |
+| Trips/expenses      | Destination/dates, estimated units, planned/actual expenses, currency conversion, receipts, none/even/value allocation and closed-trip protections                      |
+| Reports/customers   | Persisted records, search/filter, current/previous month and all-time reports, estimated/actual margins and CSV exports                                                 |
+| Team                | Verified invitation acceptance through a shared link, Owner/Manager/Helper roles, owner-assigned roles and server-restricted Helper reads/writes                        |
+| Billing             | Plan requests, manual platform activation and invoices; no simulated checkout in connected mode                                                                         |
+| Platform            | Actual merchant directory/metrics, lifecycle/plan/trial actions, manual invoice/refund notes, report moderation/resolution, audited read-only support                   |
+| Refresh/errors      | Database confirmation before success, workspace revision checks, stale form protection, visible failures, refresh on navigation and every 30 seconds while visible      |
 
-## Pricing
+Public catalog responses omit buyer data, product purchase costs, markup, margins and trip expenses. Tracking returns status and basic item/quantity information only, requires a private random token and exposes no buyer identity. Raw tables are inaccessible to the browser; security-definer RPCs authorize tenant and platform operations explicitly. Storage separates public product photos from private proofs.
 
-Prices are stored in IDR using explicit currency rates. The PRD example of JPY 3,000 at Rp 105, with 20% markup and Rp 20,000 allocated expense, produces Rp 315,000 purchase cost, Rp 378,000 selling price and Rp 43,000 profit (11.4% margin). Selling prices round to Rp 1,000. Orders retain quote cost, allocation and FX snapshots; recording actual purchases produces a separate snapshot. Changing item or trip prices therefore cannot silently rewrite past quoted profits.
+## Evidence and remaining hosted work
 
-## Prototype boundaries
+Unit tests validate pricing and record preparation. PostgreSQL checks validate the migration and tenant/privacy/financial rules using a local auth stand-in. Browser integration exercises a clean workspace through buyer order, partial/full payments, purchase, shipment/delivery and a manual invoice against real local PostgreSQL. The existing responsive/appearance workflows run in explicit demo mode at five widths. These results do not verify hosted Supabase Auth/email/Storage; the migration, network access and hosted acceptance checks are documented in docs/supabase-setup.md.
 
-The source is a UI prototype, not a production SaaS implementation. Browser-local fixtures connect the screens; account isolation, authentication, server validation, real payment gateways, messaging, billing schedules, secure role enforcement, fraud controls, uploads to cloud storage and live exchange rates need a backend. Public tracking uses sample short codes and should use unguessable server tokens in production. Read-only support previews the seeded shop and does not load independent tenant data. Moderation starts with one illustrative case. Revenue trend comparisons and platform metrics are labelled samples rather than time series calculated from the order fixtures.
-
-Desktop and mobile layouts and the primary seller/buyer paths are browser-tested. These checks do not establish production security or full accessibility conformance.
+Subscriptions are manual as requested. WhatsApp messages and invitation links are copied for users to send. Refund notes record manual handling and do not move money. There is no gateway integration, automatic messaging provider, custom-domain provisioning or public integration API. Historical mockup screenshots and the PDF are retained as visual references and do not represent actual business data.
