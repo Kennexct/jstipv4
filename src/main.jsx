@@ -151,7 +151,7 @@ function App() {
                           navigate('Trips');
                         }}
                       >
-                        <i className={`trip-dot ${t.id === 'seoul' ? 'amber-dot' : ''}`} />
+                        <i className={`trip-dot ${t.status === 'Shopping' ? 'amber-dot' : ''}`} />
                         <span>{t.name}</span>
                       </button>
                     ))}
@@ -253,7 +253,10 @@ function App() {
                   onClick={() => setNotifications((v) => !v)}
                 >
                   <I name="Bell" />
-                  <i className="notification-dot" />
+                  {(requests.length > 0 ||
+                    data.trips.some((t) => ['Open for orders', 'Shopping'].includes(t.status))) && (
+                    <i className="notification-dot" />
+                  )}
                 </button>
                 <button
                   className="icon-btn"
@@ -275,32 +278,59 @@ function App() {
               {notifications && (
                 <div className="notification-pop">
                   <h3>Notifications</h3>
-                  <button
-                    onClick={() => {
-                      navigate('Orders');
-                      setNotifications(false);
-                    }}
-                  >
-                    <i className="nav-dot" />
-                    <div>
-                      <strong>{requests.length} new order requests</strong>
-                      <p>Your customers found something they love.</p>
-                      <small>Today</small>
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => {
-                      navigate('Trips');
-                      setNotifications(false);
-                    }}
-                  >
-                    <I name="Plane" />
-                    <div>
-                      <strong>Tokyo trip starts in 2 days</strong>
-                      <p>Your shopping checklist is ready.</p>
-                      <small>Today</small>
-                    </div>
-                  </button>
+                  {requests.length > 0 && (
+                    <button
+                      onClick={() => {
+                        navigate('Requests');
+                        setNotifications(false);
+                      }}
+                    >
+                      <i className="nav-dot" />
+                      <div>
+                        <strong>
+                          {requests.length} new order {requests.length === 1 ? 'request' : 'requests'}
+                        </strong>
+                        <p>Your customers requested custom finds.</p>
+                        <small>Action needed</small>
+                      </div>
+                    </button>
+                  )}
+                  {data.trips
+                    .filter((t) => ['Open for orders', 'Shopping'].includes(t.status))
+                    .map((trip) => (
+                      <button
+                        key={trip.id}
+                        onClick={() => {
+                          sessionStorage.setItem('jo-trip', trip.id);
+                          navigate('Trips');
+                          setNotifications(false);
+                        }}
+                      >
+                        <I name="Plane" />
+                        <div>
+                          <strong>{trip.name}</strong>
+                          <p>
+                            {trip.city} · {trip.status}
+                          </p>
+                          <small>{trip.dates || 'Upcoming'}</small>
+                        </div>
+                      </button>
+                    ))}
+                  {!requests.length &&
+                    !data.trips.some((t) =>
+                      ['Open for orders', 'Shopping'].includes(t.status),
+                    ) && (
+                      <div
+                        style={{
+                          padding: '16px',
+                          textAlign: 'center',
+                          color: 'var(--text-3)',
+                          fontSize: 'var(--fs-xs)',
+                        }}
+                      >
+                        All caught up! No active notifications.
+                      </div>
+                    )}
                 </div>
               )}
             </header>

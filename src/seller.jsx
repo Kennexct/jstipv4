@@ -565,7 +565,7 @@ export function Trips() {
     role,
     support,
   } = useOps();
-  const [id, setId] = useState(sessionStorage.getItem('jo-trip') || 'tokyo');
+  const [id, setId] = useState(() => sessionStorage.getItem('jo-trip') || trips[0]?.id || '');
   if (!trips.length)
     return (
       <>
