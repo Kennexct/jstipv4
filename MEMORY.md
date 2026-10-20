@@ -191,3 +191,4 @@ When working on any future prompt in this repository:
 4. **Preserve Helper role boundaries**: Ensure Helper-visible data excludes restricted financial fields.
 5. **Keep UI consistent**: Use shared components in `src/ui.jsx` and token classes in `src/styles/tokens.css`.
 6. **Always update this MEMORY.md file** if new architectural components, schemas, or workflows are added.
+7. **Strict Cloud-First Invariant (No Localhost)**: The user does NOT run this app locally. Never suggest running localhost or starting local servers. The user pushes directly to GitHub, which automatically deploys to Vercel and builds APKs via GitHub Actions. All instructions, auth callbacks, and verification must be framed for Vercel and hosted Supabase.

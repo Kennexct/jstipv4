@@ -35,6 +35,7 @@
 5. **Atomic Stock & Concurrency**: Stock reservation is atomic on the server; stale writes are rejected via revision checks.
 6. **No External Sending Tools**: WhatsApp and invite messages are copied for manual user sending.
 7. **Post-Signup Walkthrough**: Automatically directs new users after workspace creation to `#Welcome` to configure shop details, first trip, and first find.
+8. **Cloud-First Deployment (No Localhost)**: Strictly deployed via GitHub to Vercel and GitHub Actions (APK). Never propose running localhost.
 
 ### 4. Android Packaging (Capacitor & GitHub Actions)
 - Capacitor config: [`capacitor.config.json`](file:///c:/Users/Kenny%20Chen/Documents/jstipv4/capacitor.config.json) (`com.jastipops.app`).
