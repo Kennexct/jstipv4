@@ -1,0 +1,105 @@
+// Test-only Supabase RPC transport. Uses real PostgreSQL and simplified test JWTs.
+// The production app always uses Supabase Auth; this server is never deployed.
+import http from 'node:http';
+import { startDatabase, stopDatabase, sql } from './test-database.mjs';
+const container = 'jastip-integration-' + process.pid;
+await startDatabase(container);
+sql(
+  container,
+  `insert into auth.users(id,email,email_confirmed_at) values('00000000-0000-0000-0000-000000000001','owner@example.com',now()),('00000000-0000-0000-0000-000000000004','admin@example.com',now());insert into jastip.platform_admins values('00000000-0000-0000-0000-000000000004');`,
+);
+const args = {
+  jastip_create_workspace: ['p_name', 'p_slug'],
+  jastip_load_workspace: ['p_workspace'],
+  jastip_commit: ['p_workspace', 'p_revision', 'p_changes', 'p_shop', 'p_event'],
+  jastip_storefront: ['p_slug'],
+  jastip_place_order: ['p_slug', 'p_order'],
+  jastip_track_order: ['p_token'],
+  jastip_invite_member: ['p_workspace', 'p_email', 'p_role'],
+  jastip_accept_invitation: ['p_invitation'],
+  jastip_set_member_role: ['p_workspace', 'p_member', 'p_role'],
+  jastip_platform: [],
+  jastip_admin_action: ['p_workspace', 'p_action', 'p_value'],
+  jastip_report_store: ['p_slug', 'p_note'],
+  jastip_resolve_report: ['p_workspace', 'p_report'],
+};
+const jsonArgs = new Set(['p_changes', 'p_shop', 'p_order', 'p_value']);
+const quote = (v) => "'" + String(v).replaceAll("'", "''") + "'";
+const server = http.createServer(async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    req.headers['access-control-request-headers'] ||
+      'authorization,apikey,content-type,x-client-info',
+  );
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Content-Type', 'application/json');
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+  if (req.url === '/health') {
+    res.end('{}');
+    return;
+  }
+  const name = req.url?.split('/').at(-1);
+  if (!args[name]) {
+    res.writeHead(404);
+    res.end('{}');
+    return;
+  }
+  try {
+    let raw = '';
+    for await (const chunk of req) raw += chunk;
+    const body = raw ? JSON.parse(raw) : {};
+    let id = '';
+    try {
+      id =
+        JSON.parse(
+          Buffer.from((req.headers.authorization?.slice(7) || '').split('.')[1], 'base64url'),
+        ).sub || '';
+    } catch {}
+    if (
+      id &&
+      !['00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000004'].includes(id)
+    )
+      throw Error('Unknown test user');
+    const params = args[name].map((k) =>
+      body[k] == null
+        ? 'null'
+        : jsonArgs.has(k)
+          ? quote(JSON.stringify(body[k])) + '::jsonb'
+          : quote(body[k]),
+    );
+    const value = sql(
+      container,
+      `set role ${id ? 'authenticated' : 'anon'};select set_config('request.jwt.claim.sub',${quote(id)},false);select coalesce(to_jsonb(public.${name}(${params.join(',')}))::text,'null');`,
+    )
+      .split('\n')
+      .at(-1);
+    res.end(value || 'null');
+  } catch (e) {
+    res.writeHead(400);
+    res.end(
+      JSON.stringify({
+        code: 'P0001',
+        message:
+          (e.stderr?.toString() || e.message)
+            .split('\n')
+            .find((l) => l.startsWith('ERROR:'))
+            ?.replace(/^ERROR:\s*/, '') || e.message,
+      }),
+    );
+  }
+});
+server.listen(54329, '127.0.0.1', () =>
+  console.log('Isolated PostgreSQL-backed Supabase test transport ready.'),
+);
+function close() {
+  server.close();
+  stopDatabase(container);
+  process.exit();
+}
+process.on('SIGTERM', close);
+process.on('SIGINT', close);

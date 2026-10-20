@@ -1,0 +1,13 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+*.zip
+.DS_Store
+.env
+.env.*
+!.env.example
+.supabase
+build-output/
+.gradle/
+
