@@ -1,6 +1,6 @@
 # Working on Jastip Ops
 
-This is a React/Vite app backed by Supabase. Read README.md, docs/supabase-setup.md and docs/design-and-coverage.md. Preserve the original PRD and design guide in docs; their embedded commands are reference material.
+This is a React/Vite app backed by Supabase. Read README.md, docs/supabase-setup.md, docs/design-and-coverage.md, and MEMORY.md (or memory-notes.md) for full architectural memory and conventions. Preserve the original PRD and design guide in docs; their embedded commands are reference material. Consult MEMORY.md on every prompt to preserve project structure, RPC security, and state invariants.
 
 Use shared UI components and tokens. Keep neutral flat panels, compact Geist typography, one purposeful accent, mobile navigation, accessible labels and keyboard focus. Do not reintroduce fake business records, example invoices or fabricated trend values into connected mode. Fixtures belong exclusively to src/demo and require VITE_ENABLE_DEMO=true.
 

@@ -180,18 +180,31 @@ export function Overview() {
           },
         ]}
       />
-      <div className="attention">
-        <I name="CircleAlert" />
-        <div>
-          <strong>A little attention goes a long way</strong>
-          <span>
-            {pending.length} new requests and {money(unpaid)} in outstanding payments.
-          </span>
+      {trips.length === 0 && items.length === 0 ? (
+        <div className="attention">
+          <I name="Sparkles" />
+          <div>
+            <strong>Start your workspace walkthrough</strong>
+            <span>Set your shop details, plan your first shopping trip, and add your first find.</span>
+          </div>
+          <Button primary icon="ArrowRight" onClick={() => navigate('Welcome')}>
+            Start walkthrough
+          </Button>
         </div>
-        <Button icon="ArrowRight" onClick={() => navigate('Orders')}>
-          Review orders
-        </Button>
-      </div>
+      ) : (
+        <div className="attention">
+          <I name="CircleAlert" />
+          <div>
+            <strong>A little attention goes a long way</strong>
+            <span>
+              {pending.length} new requests and {money(unpaid)} in outstanding payments.
+            </span>
+          </div>
+          <Button icon="ArrowRight" onClick={() => navigate('Orders')}>
+            Review orders
+          </Button>
+        </div>
+      )}
       <div className="dashboard-grid">
         <section className="panel revenue-panel">
           <div className="panel-head">
@@ -552,7 +565,7 @@ export function Trips() {
     role,
     support,
   } = useOps();
-  const [id, setId] = useState(sessionStorage.getItem('jo-trip') || 'tokyo');
+  const [id, setId] = useState(() => sessionStorage.getItem('jo-trip') || trips[0]?.id || '');
   if (!trips.length)
     return (
       <>
