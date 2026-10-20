@@ -34,6 +34,7 @@
 4. **Tenant Isolation & Helper Restrictions**: Helper role strictly omits financial markup/costs and budgets/invoices.
 5. **Atomic Stock & Concurrency**: Stock reservation is atomic on the server; stale writes are rejected via revision checks.
 6. **No External Sending Tools**: WhatsApp and invite messages are copied for manual user sending.
+7. **Post-Signup Walkthrough**: Automatically directs new users after workspace creation to `#Welcome` to configure shop details, first trip, and first find.
 
 ### 4. Android Packaging (Capacitor & GitHub Actions)
 - Capacitor config: [`capacitor.config.json`](file:///c:/Users/Kenny%20Chen/Documents/jstipv4/capacitor.config.json) (`com.jastipops.app`).

@@ -129,6 +129,13 @@ Raw business tables are strictly private (`revoke all on schema jastip from publ
 4. **Third-Party Messaging & Integration Boundaries**:
    - No external WhatsApp API gateway or automated messaging. WhatsApp notifications and invite links are copied to the user's clipboard for manual transmission.
    - Subscription billing is handled via manual invoices and platform admin activation.
+5. **Post-Signup Onboarding & Walkthrough Flow**:
+   - Following account creation and workspace initialization (`jastip_create_workspace`), the system automatically routes the user to the interactive Walkthrough (`#Welcome`).
+   - The 3-stage walkthrough guides merchants through:
+     1. Setting workspace identity: shop name, bio, WhatsApp customer contact, and base currency.
+     2. Setting up their first shopping trip (destination, dates, budget).
+     3. Adding their first find with real-time pricing and margin calculation.
+   - Fresh workspaces on Overview display a dedicated walkthrough launcher card until the first trip and find are established.
 
 ---
 

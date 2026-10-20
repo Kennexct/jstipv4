@@ -4,7 +4,7 @@ import { rpc } from './lib/supabase';
 import { useOps } from './store';
 import { Button, Field, I, Callout } from './ui';
 export function ConnectionGate() {
-  const { connection, connectionError, reload, session, signOut } = useOps();
+  const { connection, connectionError, reload, session, signOut, navigate } = useOps();
   const [view, setView] = useState(location.hash === '#SignUp' ? 'signup' : 'signin'),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(''),
@@ -19,15 +19,20 @@ export function ConnectionGate() {
     try {
       if (connection === 'onboarding' && view !== 'recovery' && location.hash !== '#Recovery') {
         await rpc('jastip_create_workspace', { p_name: f.name, p_slug: f.slug });
+        navigate('Welcome');
         await reload();
       } else if (view === 'signup') {
-        const { error } = await supabase.auth.signUp({
+        const { data: authData, error } = await supabase.auth.signUp({
           email: f.email,
           password: f.password,
           options: { data: { name: f.name }, emailRedirectTo: location.origin + location.pathname },
         });
         if (error) throw error;
-        setMessage('Check your email to verify your account, then sign in.');
+        if (authData?.session) {
+          await reload();
+        } else {
+          setMessage('Check your email to verify your account, then sign in.');
+        }
       } else if (view === 'reset') {
         const { error } = await supabase.auth.resetPasswordForEmail(f.email, {
           redirectTo: location.origin + location.pathname + '#Recovery',

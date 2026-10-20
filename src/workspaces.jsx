@@ -424,7 +424,11 @@ export function Settings() {
 export function Welcome() {
   const { data, change, navigate, setDialog, demoMode } = useOps();
   const [stage, setStage] = useState(0),
-    [name, setName] = useState(data.shop.name);
+    [name, setName] = useState(data.shop.name || ''),
+    [bio, setBio] = useState(data.shop.bio || ''),
+    [contact, setContact] = useState(data.shop.contact || '');
+  const activeTrips = data.trips.filter((t) => t.status !== 'Closed');
+  const activeItems = data.items.filter((i) => i.status !== 'Draft');
   return (
     <>
       <Header
@@ -446,8 +450,11 @@ export function Welcome() {
               e.preventDefault();
               if (
                 await change(
-                  (d) => ({ ...d, shop: { ...d.shop, name } }),
-                  'Your workspace is ready.',
+                  (d) => ({
+                    ...d,
+                    shop: { ...d.shop, name: name.trim() || d.shop.name, bio, contact },
+                  }),
+                  'Workspace details saved.',
                 )
               )
                 setStage(1);
@@ -457,22 +464,50 @@ export function Welcome() {
               <I name="Store" size={20} />
             </span>
             <h2>A little home for your business</h2>
-            <p>Give your workspace a name. You can change it any time.</p>
+            <p>Set up your shop identity and contact details so buyers know where to find you.</p>
             <Field label="Workspace name">
-              <input required value={name} onChange={(e) => setName(e.target.value)} />
+              <input
+                required
+                value={name}
+                placeholder="e.g. Tokyo Curated Finds"
+                onChange={(e) => setName(e.target.value)}
+              />
+            </Field>
+            <Field
+              label="Tagline / Bio"
+              hint="Appears on your public storefront header."
+            >
+              <input
+                value={bio}
+                placeholder="e.g. Thoughtfully found beauty, snacks & lifestyle goods from Tokyo & Seoul."
+                onChange={(e) => setBio(e.target.value)}
+              />
+            </Field>
+            <Field
+              label="WhatsApp contact number"
+              hint="Buyers click this on your storefront to chat or ask questions."
+            >
+              <input
+                value={contact}
+                placeholder="e.g. 628123456789"
+                onChange={(e) => setContact(e.target.value)}
+              />
             </Field>
             <Field label="Base currency">
-              <select>
-                <option>IDR · Indonesian rupiah</option>
+              <select defaultValue="IDR">
+                <option value="IDR">IDR · Indonesian rupiah</option>
+                <option value="SGD">SGD · Singapore dollar</option>
+                <option value="USD">USD · US dollar</option>
+                <option value="MYR">MYR · Malaysian ringgit</option>
               </select>
             </Field>
             <Callout>
               {demoMode
                 ? 'Explore with sample data.'
-                : 'Add a trip, then publish your first item to open your storefront.'}
+                : 'Next, plan a shopping trip to organize your travel dates and exchange rates.'}
             </Callout>
             <Button primary type="submit" icon="ArrowRight">
-              Continue
+              Save & continue to first trip
             </Button>
           </form>
         ) : stage === 1 ? (
@@ -481,11 +516,10 @@ export function Welcome() {
               <I name="Plane" size={20} />
             </span>
             <h2>Where are you shopping next?</h2>
-            <p>A trip brings together your finds, orders, and travel costs.</p>
-            <div className="onboarding-options">
-              {data.trips
-                .filter((t) => t.status !== 'Closed')
-                .map((t) => (
+            <p>A trip groups your shopping destination, travel dates, and travel expense allocation.</p>
+            {activeTrips.length > 0 ? (
+              <div className="onboarding-options">
+                {activeTrips.map((t) => (
                   <div key={t.id}>
                     <strong>{t.name}</strong>
                     <small>
@@ -494,13 +528,32 @@ export function Welcome() {
                     <Badge status={t.status} />
                   </div>
                 ))}
-            </div>
+              </div>
+            ) : (
+              <Callout icon="Info">
+                You haven’t planned a trip yet. Create your first trip to get started.
+              </Callout>
+            )}
             <div className="message-actions">
-              <Button icon="Plus" onClick={() => setDialog({ type: 'trip' })}>
-                Create a trip
+              <Button
+                primary={activeTrips.length === 0}
+                icon="Plus"
+                onClick={() => setDialog({ type: 'trip' })}
+              >
+                {activeTrips.length > 0 ? 'Add another trip' : 'Create your first trip'}
               </Button>
-              <Button primary icon="ArrowRight" onClick={() => setStage(2)}>
-                Continue with a trip
+              <Button
+                primary={activeTrips.length > 0}
+                icon="ArrowRight"
+                onClick={() => {
+                  if (activeTrips.length === 0) {
+                    setDialog({ type: 'trip' });
+                  } else {
+                    setStage(2);
+                  }
+                }}
+              >
+                Continue to first find
               </Button>
             </div>
           </div>
@@ -510,21 +563,44 @@ export function Welcome() {
               <I name="Package" size={20} />
             </span>
             <h2>Turn a find into your first listing</h2>
-            <p>Add a photo and a price. We’ll work out your margin before you post.</p>
-            <div className="onboarding-example">
-              <span>Purchase price</span>
-              <strong>¥3,000</strong>
-              <span>20% markup</span>
-              <strong>Rp 378.000 selling price</strong>
-              <span>After Rp 20.000 trip allocation</span>
-              <strong>Rp 43.000 margin · 11.4%</strong>
-            </div>
+            <p>Add a photo, cost, and markup percentage. We calculate your margin before you publish.</p>
+            {activeItems.length > 0 ? (
+              <div className="onboarding-options">
+                {activeItems.map((item) => (
+                  <div key={item.id}>
+                    <strong>{item.name}</strong>
+                    <small>Stock: {item.qty} · {item.category}</small>
+                    <Badge status={item.status} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="onboarding-example">
+                <span>Purchase price</span>
+                <strong>¥3,000</strong>
+                <span>20% markup</span>
+                <strong>Rp 378.000 selling price</strong>
+                <span>After Rp 20.000 trip allocation</span>
+                <strong>Rp 43.000 margin · 11.4%</strong>
+              </div>
+            )}
             <div className="message-actions">
-              <Button primary icon="Plus" onClick={() => setDialog({ type: 'item' })}>
-                Add your first item
+              <Button
+                primary={activeItems.length === 0}
+                icon="Plus"
+                onClick={() => setDialog({ type: 'item' })}
+              >
+                {activeItems.length > 0 ? 'Add another item' : 'Add your first item'}
               </Button>
               <Button icon="ExternalLink" onClick={() => navigate('Storefront')}>
                 Explore your storefront
+              </Button>
+              <Button
+                primary={activeItems.length > 0}
+                icon="Check"
+                onClick={() => navigate('Overview')}
+              >
+                Go to overview
               </Button>
             </div>
           </div>
@@ -532,7 +608,7 @@ export function Welcome() {
       </section>
       <div className="onboarding-footer">
         <I name="CheckCircle2" size={14} />
-        No customer account needed. Orders arrive in your inbox.
+        <span>No customer account needed. Orders arrive directly in your inbox.</span>
         <button className="text-btn" onClick={() => navigate('Overview')}>
           Go to overview <I name="ArrowRight" size={14} />
         </button>
