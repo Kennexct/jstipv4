@@ -1,0 +1,2 @@
+# DBA — trip-currency-storefront-team (2026-10-21)
+Migration `202610210002_trip_currency_storefront_team.sql`: adds `jastip.workspaces.storefront jsonb not null default '{}'` (+ object check); helpers `jastip.currency_decimals`, `jastip.price_step`; replaces `validate_record`, `jastip_commit`, `jastip_storefront`, `jastip_place_order`, `jastip_load_workspace`, `deposit_for`; new RPCs `jastip_remove_member`, `jastip_update_invitation`. Existing data untouched (missing baseCurrency = IDR). Apply after 202610210001.

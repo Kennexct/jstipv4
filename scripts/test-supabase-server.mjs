@@ -18,6 +18,8 @@ const args = {
   jastip_invite_member: ['p_workspace', 'p_email', 'p_role'],
   jastip_accept_invitation: ['p_invitation'],
   jastip_set_member_role: ['p_workspace', 'p_member', 'p_role'],
+  jastip_remove_member: ['p_workspace', 'p_member'],
+  jastip_update_invitation: ['p_workspace', 'p_invitation', 'p_email'],
   jastip_platform: [],
   jastip_admin_action: ['p_workspace', 'p_action', 'p_value'],
   jastip_report_store: ['p_slug', 'p_note'],

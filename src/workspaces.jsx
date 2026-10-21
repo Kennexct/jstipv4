@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useOps, useUnsavedChanges } from './store';
-import { money, isUnlimited, stockLabel, depositLabel } from './money';
+import { money, isUnlimited, stockLabel, depositLabel, currencyOf, currencyNames } from './money';
 import { planDetails } from './data';
 import { LiveBilling, LiveAdminSummary } from './live-workspaces';
 import { rpc } from './lib/supabase';
 import { sendInviteEmail, inviteLink } from './lib/repository';
 import { markWalkthroughDone } from './lib/records';
+import { storeLayouts, storeAccents, storeTheme } from './storefront-theme';
 import {
   I,
   Button,
@@ -179,6 +180,7 @@ export function Settings() {
     pending,
     confirmDiscard,
     copy,
+    setConfirm,
   } = useOps();
   const tabs = ['Appearance', 'Workspace', 'Team & roles', 'Currency', 'Storefront'];
   // Remember the open tab across saves, reloads and quiet refreshes.
@@ -202,6 +204,7 @@ export function Settings() {
     slug: data.shop.slug || '',
     contact: data.shop.contact || '',
     bio: data.shop.bio || '',
+    storefront: storeTheme(data.shop),
   });
   const ratesDraft = () =>
     Object.fromEntries(data.trips.filter((t) => t.status !== 'Closed').map((t) => [t.id, t.rate]));
@@ -297,6 +300,28 @@ export function Settings() {
   useEffect(() => {
     if (!touched.roles) setRoles(rolesDraft());
   }, [JSON.stringify(data.members)]);
+  const removeMember = (m) => {
+    const invited = m.status === 'Invited',
+      who = m.name || m.email;
+    setConfirm({
+      title: invited ? 'Cancel this invitation?' : `Remove ${who}?`,
+      text: invited
+        ? `The link sent to ${m.email} will stop working. You can invite them again later.`
+        : `${who} loses access to this workspace right away. Orders and history they worked on stay.`,
+      confirmLabel: invited ? 'Cancel invitation' : 'Remove member',
+      cancelLabel: 'Keep',
+      proceed: async () => {
+        setConfirm(null);
+        try {
+          await rpc('jastip_remove_member', { p_workspace: data.workspaceId, p_member: m.id });
+          await reload({ quiet: true });
+          announce(invited ? `Invitation for ${m.email} cancelled.` : `${who} was removed.`);
+        } catch (error) {
+          announce(error.message);
+        }
+      },
+    });
+  };
   const resendInvite = async (m) => {
     try {
       await sendInviteEmail(m.email, m.id);
@@ -338,15 +363,42 @@ export function Settings() {
               <p>One accent, used with purpose.</p>
             </div>
             <div className="accent-options">
-              {['indigo', 'blue', 'violet', 'teal', 'rose', 'graphite'].map((c) => (
+              {['indigo', 'blue', 'violet', 'teal', 'emerald', 'orange', 'rose', 'graphite'].map(
+                (c) => (
+                  <button
+                    key={c}
+                    data-color={c}
+                    className={p.accent === c ? 'selected' : ''}
+                    aria-label={c + ' accent'}
+                    onClick={() => preference('accent', c)}
+                  >
+                    {p.accent === c && <I name="Check" size={14} />}
+                  </button>
+                ),
+              )}
+            </div>
+          </div>
+          <div className="settings-row">
+            <div>
+              <h3>Colour style</h3>
+              <p>
+                Subtle keeps the accent for buttons. Tinted also colours the sidebar, menu and
+                highlights.
+              </p>
+            </div>
+            <div className="segmented" role="radiogroup" aria-label="Colour style">
+              {[
+                ['subtle', 'Subtle'],
+                ['tinted', 'Tinted'],
+              ].map(([v, label]) => (
                 <button
-                  key={c}
-                  data-color={c}
-                  className={p.accent === c ? 'selected' : ''}
-                  aria-label={c + ' accent'}
-                  onClick={() => preference('accent', c)}
+                  key={v}
+                  role="radio"
+                  aria-checked={(p.tint || 'subtle') === v}
+                  className={(p.tint || 'subtle') === v ? 'active' : ''}
+                  onClick={() => preference('tint', v)}
                 >
-                  {p.accent === c && <I name="Check" size={14} />}
+                  {label}
                 </button>
               ))}
             </div>
@@ -437,6 +489,13 @@ export function Settings() {
                   <Badge status={invited ? 'Invited' : m.role === 'Owner' ? 'Owner' : 'Active'} />
                   {invited && !demoMode && role === 'Owner' && (
                     <>
+                      <Button
+                        icon="Pencil"
+                        disabled={support}
+                        onClick={() => setDialog({ type: 'edit-invite', member: m })}
+                      >
+                        Edit email
+                      </Button>
                       <Button icon="Send" disabled={support} onClick={() => resendInvite(m)}>
                         Resend email
                       </Button>
@@ -460,6 +519,21 @@ export function Settings() {
                     </select>
                   ) : (
                     m.role !== 'Owner' && <span className="muted">{m.role}</span>
+                  )}
+                  {!demoMode && role === 'Owner' && m.role !== 'Owner' && (
+                    <button
+                      type="button"
+                      className="icon-btn danger-icon"
+                      aria-label={
+                        (m.status === 'Invited' ? 'Cancel invitation for ' : 'Remove ') +
+                        (m.name || m.email)
+                      }
+                      title={m.status === 'Invited' ? 'Cancel invitation' : 'Remove member'}
+                      disabled={support || saving}
+                      onClick={() => removeMember(m)}
+                    >
+                      <I name="Trash2" size={15} />
+                    </button>
                   )}
                 </div>
               </div>
@@ -486,18 +560,22 @@ export function Settings() {
         <section className="panel">
           <div className="panel-head">
             <h2>Exchange rates</h2>
-            <small>Base currency: IDR</small>
+            <small>Each trip: buying → selling currency</small>
           </div>
           {data.trips
             .filter((t) => t.status !== 'Closed')
             .map((t) => (
               <div className="settings-row padded" key={t.id}>
                 <div>
-                  <h3>{t.currency} → IDR</h3>
+                  <h3>
+                    {t.currency} → {t.baseCurrency || 'IDR'}
+                  </h3>
                   <p>{t.name} · Existing order snapshots stay unchanged</p>
                 </div>
                 <div className="rate-input">
-                  <span>1 {t.currency} = Rp</span>
+                  <span>
+                    1 {t.currency} = {t.baseCurrency || 'IDR'}
+                  </span>
                   <input
                     type="number"
                     min="0.001"
@@ -517,6 +595,129 @@ export function Settings() {
             />
           )}
         </section>
+      ) : tab === 'Storefront' ? (
+        <section className="panel settings-form storefront-settings">
+          <div className="panel-head flush">
+            <div>
+              <h2>Storefront design</h2>
+              <p className="muted">
+                Choose how customers see your shop. Every layout works on phones and with any
+                colour.
+              </p>
+            </div>
+            <Button icon="ExternalLink" onClick={() => navigate('Storefront')}>
+              Open storefront
+            </Button>
+          </div>
+          <Field
+            label="Storefront link"
+            hint="Changing it changes the link you’ve shared with customers."
+          >
+            <div className="input-combo">
+              <input
+                required
+                aria-label="Storefront slug"
+                pattern="[a-z0-9][a-z0-9-]{2,59}"
+                value={shop.slug}
+                disabled={support}
+                onChange={(e) => editShop((d) => ({ ...d, slug: e.target.value.toLowerCase() }))}
+              />
+            </div>
+          </Field>
+          <div className="settings-block">
+            <h3>Layout</h3>
+            <div className="layout-options" role="radiogroup" aria-label="Storefront layout">
+              {storeLayouts.map((l) => (
+                <button
+                  type="button"
+                  key={l.id}
+                  role="radio"
+                  aria-checked={shop.storefront.layout === l.id}
+                  className={`layout-option ${shop.storefront.layout === l.id ? 'selected' : ''}`}
+                  disabled={support}
+                  style={{ '--wire-accent': storeAccents[shop.storefront.accent] }}
+                  onClick={() =>
+                    editShop((d) => ({ ...d, storefront: { ...d.storefront, layout: l.id } }))
+                  }
+                >
+                  <span className={`wire wire-${l.id}`} aria-hidden="true">
+                    {l.id === 'marketplace' ? (
+                      <>
+                        <i className="w-accent" />
+                        <i />
+                        <span className="w-grid">
+                          {Array.from({ length: 10 }, (_, k) => (
+                            <i key={k} />
+                          ))}
+                        </span>
+                      </>
+                    ) : l.id === 'showcase' ? (
+                      <>
+                        <i className="w-accent" />
+                        <span className="w-row">
+                          {Array.from({ length: 4 }, (_, k) => (
+                            <i key={k} />
+                          ))}
+                        </span>
+                        <i className="w-accent" />
+                        <span className="w-row">
+                          {Array.from({ length: 4 }, (_, k) => (
+                            <i key={k} />
+                          ))}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <i style={{ width: '40%' }} />
+                        <span className="w-grid">
+                          {Array.from({ length: 3 }, (_, k) => (
+                            <i key={k} />
+                          ))}
+                        </span>
+                      </>
+                    )}
+                  </span>
+                  <strong>{l.name}</strong>
+                  <small>{l.text}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="settings-block">
+            <h3>Storefront colour</h3>
+            <div className="swatches" role="radiogroup" aria-label="Storefront colour">
+              {Object.entries(storeAccents).map(([key, hex]) => (
+                <button
+                  type="button"
+                  key={key}
+                  role="radio"
+                  aria-checked={shop.storefront.accent === key}
+                  aria-label={key + ' storefront colour'}
+                  className={`swatch ${shop.storefront.accent === key ? 'selected' : ''}`}
+                  style={{ background: hex }}
+                  disabled={support}
+                  onClick={() =>
+                    editShop((d) => ({ ...d, storefront: { ...d.storefront, accent: key } }))
+                  }
+                >
+                  {shop.storefront.accent === key && <I name="Check" size={14} />}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="settings-block">
+            <h3>Preview</h3>
+            <div className="store-preview-frame">
+              <span className="badge gray store-preview-label">
+                <i />
+                {dirty ? 'Unsaved preview' : 'Live'}
+              </span>
+              <div className="store-preview-scale" aria-hidden="true">
+                <Storefront theme={shop.storefront} embedded />
+              </div>
+            </div>
+          </div>
+        </section>
       ) : (
         <form
           className="panel settings-form"
@@ -531,21 +732,12 @@ export function Settings() {
               {shopError}
             </div>
           )}
-          <Field label={tab === 'Storefront' ? 'Storefront name' : 'Workspace name'}>
+          <Field label="Workspace name" hint="Also shown as your storefront name.">
             <input
               required
               value={shop.name}
               disabled={support}
               onChange={(e) => editShop((d) => ({ ...d, name: e.target.value }))}
-            />
-          </Field>
-          <Field label="Storefront slug" hint="Changing it changes your shared storefront link.">
-            <input
-              required
-              pattern="[a-z0-9][a-z0-9-]{2,59}"
-              value={shop.slug}
-              disabled={support}
-              onChange={(e) => editShop((d) => ({ ...d, slug: e.target.value.toLowerCase() }))}
             />
           </Field>
           <Field
@@ -567,6 +759,25 @@ export function Settings() {
               onChange={(e) => editShop((d) => ({ ...d, bio: e.target.value }))}
             />
           </Field>
+          <Field
+            label="Selling currency"
+            hint="Set on each trip, so one trip can sell in Rp and the next in S$. A trip’s currency locks once it has items or orders."
+          >
+            <div className="currency-chips">
+              {[...new Set(data.trips.map((t) => t.baseCurrency || 'IDR'))].map((c) => (
+                <span className="badge gray" key={c}>
+                  <i />
+                  {c} · {currencyNames[c] || c}
+                </span>
+              ))}
+              {!data.trips.length && (
+                <span className="muted">Choose it when you create a trip.</span>
+              )}
+              <Button type="button" icon="Plus" onClick={() => setDialog({ type: 'trip' })}>
+                New trip
+              </Button>
+            </div>
+          </Field>
         </form>
       )}
       <SaveBar dirty={dirty} busy={saving || pending} onSave={save} onDiscard={discard} />
@@ -580,7 +791,7 @@ export function Settings() {
           {demoMode
             ? 'Your changes are saved in this browser.'
             : tab === 'Appearance'
-              ? 'Appearance changes apply instantly and stay on this device.'
+              ? 'Appearance changes apply instantly and are saved to your account, so they follow you to any device.'
               : 'Changes are saved to Supabase when you press Save changes.'}
         </span>
       </div>
@@ -801,7 +1012,7 @@ export function Welcome() {
     </>
   );
 }
-export function Storefront() {
+export function Storefront({ theme: override, embedded = false }) {
   const {
     data: { items, trips, shop },
     navigate,
@@ -812,12 +1023,15 @@ export function Storefront() {
   const [q, setQ] = useState(''),
     [trip, setTrip] = useState('all'),
     [category, setCategory] = useState('All'),
-    [availability, setAvailability] = useState('All availability');
+    [availability, setAvailability] = useState('All availability'),
+    [expanded, setExpanded] = useState({});
+  const theme = override || storeTheme(shop);
   // Only the merchant who opened "Your storefront" from the workspace sees a way back.
   let preview = demoMode;
   try {
     preview = demoMode || (!!session && sessionStorage.getItem('jo-store-preview') === '1');
   } catch {}
+  const open = (dialog) => !embedded && setDialog(dialog);
   const listed = items.filter((i) => i.status !== 'Draft' && (isUnlimited(i) || i.qty > 0));
   const openTrips = trips.filter(
     (t) => t.status === 'Open for orders' || listed.some((i) => i.trip === t.id),
@@ -834,187 +1048,302 @@ export function Storefront() {
   const groups = (trip === 'all' ? openTrips : openTrips.filter((t) => t.id === trip))
     .map((t) => ({ trip: t, items: list.filter((i) => i.trip === t.id) }))
     .filter((g) => g.items.length);
+  const loose = list.filter((i) => !openTrips.some((t) => t.id === i.trip));
   const cities = [...new Set(openTrips.map((t) => t.city).filter(Boolean))];
-  const product = (i) => (
+  const tripOf = (i) => trips.find((t) => t.id === i.trip);
+  const price = (i) => money(i.selling, false, currencyOf(i, trips));
+  const card = (i, variant = '') => (
     <button
-      className="store-product"
+      className={`store-product ${variant}`}
       key={i.id}
-      onClick={() => setDialog({ type: 'product', item: i })}
+      onClick={() => open({ type: 'product', item: i })}
     >
       <div className="store-image">
         <ProductArt item={i} />
         <Badge status={i.status} />
       </div>
-      <small>{i.category}</small>
+      {variant !== 'lb' && <small>{i.category}</small>}
       <h3>{i.name}</h3>
-      <strong>{money(i.selling)}</strong>
+      <strong className="store-price">{price(i)}</strong>
       <span>
-        {stockLabel(i)}
+        {variant === 'lb' ? tripOf(i)?.name : stockLabel(i)}
         {depositLabel(i) && <em className="store-dp">{depositLabel(i)}</em>}
       </span>
     </button>
   );
+  const contact = () =>
+    window.open(
+      'https://wa.me/' +
+        shop.contact.replace(/\D/g, '') +
+        '?text=' +
+        encodeURIComponent(`Hi ${shop.name}, I have a question about your travel finds.`),
+      '_blank',
+      'noopener,noreferrer',
+    );
+  const actions = (
+    <div className="store-actions">
+      <button className="text-btn" onClick={() => open({ type: 'track' })}>
+        <I name="PackageSearch" size={15} />
+        Track order
+      </button>
+      <button className="text-btn" disabled={!shop.contact} onClick={contact}>
+        <I name="MessageCircle" size={15} />
+        Contact
+      </button>
+    </div>
+  );
+  const brand = (
+    <div className="store-brand">
+      <span className="store-monogram">{(shop.name || 'j').slice(0, 1).toLowerCase()}.</span>
+      <div>
+        <h2>{shop.name}</h2>
+        <span>
+          {theme.layout === 'marketplace'
+            ? shop.bio || 'Personal shopping'
+            : 'Thoughtfully found. Happily brought home.'}
+        </span>
+      </div>
+    </div>
+  );
+  const availabilitySelect = (
+    <select
+      aria-label="Filter availability"
+      value={availability}
+      onChange={(e) => setAvailability(e.target.value)}
+    >
+      <option>All availability</option>
+      <option>Available</option>
+      <option>Pre-order</option>
+    </select>
+  );
+  const categoryTabs = categories.length > 1 && (
+    <div className="store-tabs">
+      {['All', ...categories].map((c) => (
+        <button key={c} className={category === c ? 'active' : ''} onClick={() => setCategory(c)}>
+          {c === 'All' ? 'All finds' : c}
+        </button>
+      ))}
+      <span className="spacer" />
+      <small>{list.length} finds</small>
+    </div>
+  );
+  const tripCards = openTrips.length > 0 && (
+    <section className="store-trips" aria-label="Current trips">
+      {openTrips.map((t) => {
+        const count = listed.filter((i) => i.trip === t.id).length;
+        const active = trip === t.id;
+        return (
+          <button
+            key={t.id}
+            className={`store-trip ${active ? 'active' : ''}`}
+            aria-pressed={active}
+            onClick={() => setTrip(active ? 'all' : t.id)}
+          >
+            <span className="trip-glyph">
+              <I name="Plane" size={16} />
+            </span>
+            <span className="store-trip-body">
+              <small>{t.status}</small>
+              <strong>{t.name}</strong>
+              <span>{[t.city, t.dates].filter(Boolean).join(' · ') || 'Dates coming soon'}</span>
+              <span className="store-trip-meta">
+                {count} {count === 1 ? 'find' : 'finds'}
+                {t.hub ? ` · Delivered from ${t.hub}` : ''}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+    </section>
+  );
+  const empty = !list.length && (
+    <Empty
+      title={listed.length ? 'No finds match your search' : 'This trip has no items yet'}
+      text={
+        listed.length
+          ? 'Try another trip, category or search.'
+          : 'Follow along for updates, or request something you have in mind.'
+      }
+    />
+  );
+  const footer = (
+    <>
+      <div className="request-banner">
+        <span className="trip-glyph">
+          <I name="MessageSquare" size={20} />
+        </span>
+        <div>
+          <h3>Have something in mind?</h3>
+          <p>Send a link or a wish. We’ll look for it on our next trip.</p>
+        </div>
+        <Button
+          icon="ArrowUpRight"
+          disabled={!openTrips.length}
+          onClick={() => open({ type: 'buyer-request' })}
+        >
+          Request an item
+        </Button>
+      </div>
+      <footer className="store-footer">
+        <span>{shop.name}</span>
+        {cities.length > 0 && <span>Personal shopping from {cities.join(', ')}</span>}
+        <button className="text-btn" onClick={() => open({ type: 'report' })}>
+          Report storefront
+        </button>
+        <span>
+          Powered by <strong>jastip ops</strong>
+        </span>
+      </footer>
+    </>
+  );
   return (
-    <div className="storefront">
-      {preview && (
+    <div
+      className={`storefront store-${theme.layout} ${embedded ? 'embedded' : ''}`}
+      style={{ '--store-accent': storeAccents[theme.accent] }}
+      aria-label={embedded ? 'Storefront preview' : undefined}
+    >
+      {preview && !embedded && (
         <button className="store-preview-exit" onClick={() => navigate('Overview')}>
           <I name="ArrowLeft" size={14} />
           Exit preview
         </button>
       )}
-      <div className="store-shell">
-        <header className="store-header">
-          <div className="store-brand">
-            <span className="store-monogram">{(shop.name || 'j').slice(0, 1).toLowerCase()}.</span>
-            <div>
-              <h2>{shop.name}</h2>
-              <span>Thoughtfully found. Happily brought home.</span>
+      {theme.layout === 'marketplace' ? (
+        <>
+          <header className="mk-top">
+            <div className="mk-top-inner">
+              {brand}
+              <SearchField value={q} onChange={setQ} placeholder="Search this shop…" />
+              {actions}
             </div>
-          </div>
-          <div>
-            <button className="text-btn" onClick={() => setDialog({ type: 'track' })}>
-              <I name="PackageSearch" size={15} />
-              Track order
-            </button>
-            <button
-              className="text-btn"
-              disabled={!shop.contact}
-              onClick={() =>
-                window.open(
-                  'https://wa.me/' +
-                    shop.contact.replace(/\D/g, '') +
-                    '?text=' +
-                    encodeURIComponent(
-                      `Hi ${shop.name}, I have a question about your travel finds.`,
-                    ),
-                  '_blank',
-                  'noopener,noreferrer',
-                )
-              }
-            >
-              <I name="MessageCircle" size={15} />
-              Contact
-            </button>
-          </div>
-        </header>
-        <section className="store-intro">
-          <span className="eyebrow">
-            {focus ? `Now shopping · ${focus.name}` : 'From there, with care'}
-          </span>
-          <h1>A little closer to your favorite finds.</h1>
-          {shop.bio && <p>{shop.bio}</p>}
-        </section>
-        {openTrips.length > 0 && (
-          <section className="store-trips" aria-label="Current trips">
-            {openTrips.map((t) => {
-              const count = listed.filter((i) => i.trip === t.id).length;
-              const active = trip === t.id;
-              return (
-                <button
-                  key={t.id}
-                  className={`store-trip ${active ? 'active' : ''}`}
-                  aria-pressed={active}
-                  onClick={() => setTrip(active ? 'all' : t.id)}
-                >
-                  <span className="trip-glyph">
-                    <I name="Plane" size={16} />
-                  </span>
-                  <span className="store-trip-body">
-                    <small>{t.status === 'Open for orders' ? 'Open for orders' : t.status}</small>
-                    <strong>{t.name}</strong>
-                    <span>
-                      {[t.city, t.dates].filter(Boolean).join(' · ') || 'Dates coming soon'}
-                    </span>
-                    <span className="store-trip-meta">
-                      {count} {count === 1 ? 'find' : 'finds'}
-                      {t.hub ? ` · Delivered from ${t.hub}` : ''}
-                    </span>
-                  </span>
+          </header>
+          <div className="store-shell">
+            <h1 className="sr-only">{shop.name} storefront</h1>
+            {openTrips.length > 0 && (
+              <section className="mk-trips" aria-label="Current trips">
+                <button className={trip === 'all' ? 'active' : ''} onClick={() => setTrip('all')}>
+                  All trips
                 </button>
-              );
-            })}
-          </section>
-        )}
-        <div className="store-toolbar">
-          <SearchField value={q} onChange={setQ} placeholder="Find something you love…" />
-          <TripFilter trips={openTrips} value={trip} onChange={setTrip} />
-          <select
-            aria-label="Filter availability"
-            value={availability}
-            onChange={(e) => setAvailability(e.target.value)}
-          >
-            <option>All availability</option>
-            <option>Available</option>
-            <option>Pre-order</option>
-          </select>
-        </div>
-        {categories.length > 1 && (
-          <div className="store-tabs">
-            {['All', ...categories].map((c) => (
-              <button
-                key={c}
-                className={category === c ? 'active' : ''}
-                onClick={() => setCategory(c)}
-              >
-                {c === 'All' ? 'All finds' : c}
-              </button>
-            ))}
-            <span className="spacer" />
-            <small>{list.length} finds</small>
-          </div>
-        )}
-        {groups.map((g) => (
-          <section className="store-trip-group" key={g.trip.id}>
-            <div className="store-trip-heading">
-              <I name="Plane" size={15} />
-              <h2>{g.trip.name}</h2>
-              <span>{[g.trip.city, g.trip.dates].filter(Boolean).join(' · ')}</span>
+                {openTrips.map((t) => (
+                  <button
+                    key={t.id}
+                    className={trip === t.id ? 'active' : ''}
+                    aria-pressed={trip === t.id}
+                    onClick={() => setTrip(trip === t.id ? 'all' : t.id)}
+                  >
+                    <I name="Plane" size={13} />
+                    <strong>{t.name}</strong>
+                    <small>{[t.city, t.dates].filter(Boolean).join(' · ')}</small>
+                  </button>
+                ))}
+              </section>
+            )}
+            {focus && (
+              <div className="mk-banner">
+                <div>
+                  <small>Now shopping</small>
+                  <h2>{focus.name}</h2>
+                  <span>
+                    {[focus.city, focus.dates].filter(Boolean).join(' · ')}
+                    {focus.hub ? ` · Delivered from ${focus.hub}` : ''}
+                  </span>
+                </div>
+                <I name="Plane" size={28} />
+              </div>
+            )}
+            <div className="mk-toolbar">
+              {categoryTabs || <span className="spacer" />}
+              {availabilitySelect}
             </div>
-            <div className="store-grid">{g.items.map(product)}</div>
+            <div className="store-grid mk-grid">{list.map((i) => card(i, 'mk'))}</div>
+            {empty}
+            {footer}
+          </div>
+        </>
+      ) : theme.layout === 'showcase' ? (
+        <div className="store-shell">
+          <header className="store-header">
+            {brand}
+            {actions}
+          </header>
+          <section className="store-intro">
+            <span className="eyebrow">
+              {focus ? `Now shopping · ${focus.name}` : 'From there, with care'}
+            </span>
+            <h1>A little closer to your favorite finds.</h1>
+            {shop.bio && <p>{shop.bio}</p>}
           </section>
-        ))}
-        {list.some((i) => !openTrips.some((t) => t.id === i.trip)) && (
-          <div className="store-grid">
-            {list.filter((i) => !openTrips.some((t) => t.id === i.trip)).map(product)}
+          {tripCards}
+          <div className="store-toolbar">
+            <SearchField value={q} onChange={setQ} placeholder="Find something you love…" />
+            <TripFilter trips={openTrips} value={trip} onChange={setTrip} />
+            {availabilitySelect}
           </div>
-        )}
-        {!list.length && (
-          <Empty
-            title={listed.length ? 'No finds match your search' : 'This trip has no items yet'}
-            text={
-              listed.length
-                ? 'Try another trip, category or search.'
-                : 'Follow along for updates, or request something you have in mind.'
-            }
-          />
-        )}
-        <div className="request-banner">
-          <span className="trip-glyph">
-            <I name="MessageSquare" size={20} />
-          </span>
-          <div>
-            <h3>Have something in mind?</h3>
-            <p>Send a link or a wish. We’ll look for it on our next trip.</p>
-          </div>
-          <Button
-            icon="ArrowUpRight"
-            disabled={!openTrips.length}
-            onClick={() => setDialog({ type: 'buyer-request' })}
-          >
-            Request an item
-          </Button>
+          {categoryTabs}
+          {groups.map((g) => (
+            <section className="store-trip-group sc-group" key={g.trip.id}>
+              <div className="sc-banner">
+                <div>
+                  <small>{g.trip.status}</small>
+                  <h2>{g.trip.name}</h2>
+                  <span>
+                    {[g.trip.city, g.trip.dates].filter(Boolean).join(' · ')}
+                    {g.trip.hub ? ` · Delivered from ${g.trip.hub}` : ''}
+                  </span>
+                </div>
+                {g.items.length > 4 && (
+                  <button
+                    className="sc-more"
+                    onClick={() => setExpanded((e) => ({ ...e, [g.trip.id]: !e[g.trip.id] }))}
+                  >
+                    {expanded[g.trip.id] ? 'Show less' : `See all ${g.items.length}`}
+                  </button>
+                )}
+              </div>
+              <div className={expanded[g.trip.id] ? 'store-grid' : 'sc-row'}>
+                {g.items.map((i) => card(i, 'sc'))}
+              </div>
+            </section>
+          ))}
+          {loose.length > 0 && <div className="store-grid">{loose.map((i) => card(i))}</div>}
+          {empty}
+          {footer}
         </div>
-        <footer className="store-footer">
-          <span>{shop.name}</span>
-          {cities.length > 0 && <span>Personal shopping from {cities.join(', ')}</span>}
-          <button className="text-btn" onClick={() => setDialog({ type: 'report' })}>
-            Report storefront
-          </button>
-          <span>
-            Powered by <strong>jastip ops</strong>
-          </span>
-        </footer>
-      </div>
+      ) : (
+        <div className="store-shell">
+          <header className="store-header lb-header">
+            {brand}
+            {actions}
+          </header>
+          <section className="lb-hero">
+            <h1>{shop.name}</h1>
+            {shop.bio && <p>{shop.bio}</p>}
+            {openTrips.length > 0 && (
+              <div className="lb-trips">
+                {openTrips.map((t) => (
+                  <button
+                    key={t.id}
+                    className={trip === t.id ? 'active' : ''}
+                    aria-pressed={trip === t.id}
+                    onClick={() => setTrip(trip === t.id ? 'all' : t.id)}
+                  >
+                    {t.name}
+                    <small>{t.dates}</small>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+          <div className="store-toolbar">
+            <SearchField value={q} onChange={setQ} placeholder="Search the collection…" />
+            {availabilitySelect}
+          </div>
+          {categoryTabs}
+          <div className="lb-grid">{list.map((i) => card(i, 'lb'))}</div>
+          {empty}
+          {footer}
+        </div>
+      )}
     </div>
   );
 }

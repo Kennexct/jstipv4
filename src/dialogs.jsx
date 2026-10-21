@@ -24,6 +24,12 @@ import {
   depositLabel,
   paymentState,
   MAX_UNLIMITED_PER_ORDER,
+  currencyOf,
+  currencyNames,
+  defaultRate,
+  decimalsFor,
+  stepFor,
+  roundTo,
 } from './money';
 import {
   I,
@@ -73,6 +79,7 @@ export function DetailDrawer() {
     m = data.merchants.find((m) => m.id === drawer.id),
     item = data.items.find((i) => i.id === o?.itemId);
   const close = () => setDrawer(null);
+  const cur = o ? currencyOf(o, data.trips) : 'IDR';
   // "Paid" is a payment state; jastipers may purchase before the customer pays in full.
   const fulfilment = ['Requested', 'Quoted', 'Confirmed', 'Purchased', 'Shipped', 'Delivered'],
     step = o ? fulfilment.indexOf(o.status === 'Paid' ? 'Confirmed' : o.status) : -1;
@@ -110,11 +117,11 @@ export function DetailDrawer() {
               <div>
                 <strong>{o.item}</strong>
                 <span>
-                  {o.qty} × {money(o.total / o.qty)}
+                  {o.qty} × {money(o.total / o.qty, false, cur)}
                 </span>
                 <small>{data.trips.find((t) => t.id === o.trip)?.name}</small>
               </div>
-              <strong>{money(o.total)}</strong>
+              <strong>{money(o.total, false, cur)}</strong>
             </div>
             {o.note && (
               <div className="order-note">
@@ -164,23 +171,23 @@ export function DetailDrawer() {
             <div className="payment-summary">
               <div>
                 <span>Order total</span>
-                <strong>{money(o.total)}</strong>
+                <strong>{money(o.total, false, cur)}</strong>
               </div>
               <div>
                 <span>Amount paid</span>
-                <strong>{money(o.paid)}</strong>
+                <strong>{money(o.paid, false, cur)}</strong>
               </div>
               <div>
                 <span>Outstanding</span>
                 <strong className={o.paid < o.total ? 'amber' : ''}>
-                  {money(Math.max(0, o.total - o.paid))}
+                  {money(Math.max(0, o.total - o.paid), false, cur)}
                 </strong>
               </div>
               {o.deposit > 0 && (
                 <div>
                   <span>Down payment</span>
                   <strong className={o.paid < o.deposit ? 'amber' : ''}>
-                    {money(o.deposit)}
+                    {money(o.deposit, false, cur)}
                     {o.paid < o.deposit ? ' due' : ' paid'}
                   </strong>
                 </div>
@@ -214,12 +221,12 @@ export function DetailDrawer() {
               <div className="margin-pair">
                 <div>
                   <span>Estimated margin</span>
-                  <strong>{money(orderProfit(o, false))}</strong>
+                  <strong>{money(orderProfit(o, false), false, cur)}</strong>
                 </div>
                 <div>
                   <span>Actual margin</span>
                   <strong>
-                    {o.actualCost != null ? money(orderProfit(o)) : 'Not purchased yet'}
+                    {o.actualCost != null ? money(orderProfit(o), false, cur) : 'Not purchased yet'}
                   </strong>
                 </div>
               </div>
@@ -248,7 +255,7 @@ export function DetailDrawer() {
                 icon="Copy"
                 onClick={() =>
                   copy(
-                    `Hi ${o.name.split(' ')[0]}, your quote for ${o.qty} × ${o.item} is ${money(o.total)}. Reply to confirm. Order ${o.id}.`,
+                    `Hi ${o.name.split(' ')[0]}, your quote for ${o.qty} × ${o.item} is ${money(o.total, false, cur)}. Reply to confirm. Order ${o.id}.`,
                   )
                 }
               >
@@ -258,7 +265,7 @@ export function DetailDrawer() {
                 icon="Copy"
                 onClick={() =>
                   copy(
-                    `Hi ${o.name.split(' ')[0]}, a friendly reminder: ${money(Math.max(0, o.total - o.paid))} is outstanding for ${o.id}. Thank you.`,
+                    `Hi ${o.name.split(' ')[0]}, a friendly reminder: ${money(Math.max(0, o.total - o.paid), false, cur)} is outstanding for ${o.id}. Thank you.`,
                   )
                 }
               >
@@ -491,12 +498,13 @@ export function Dialog() {
     paymentMethod: 'Bank transfer',
     link: '',
     actualPrice: order?.quotedCost || 0,
-    actualCurrency: 'IDR',
+    actualCurrency: order ? currencyOf(order, data.trips) : 'IDR',
     categoryBudget: original.budget?.category || 'Hotel',
     description: original.budget?.description || '',
     planned: original.budget?.planned || 0,
     actual: original.budget?.actual || 0,
-    expenseCurrency: 'IDR',
+    expenseCurrency: original.trip?.baseCurrency || 'IDR',
+    baseCurrency: data.trips.at(-1)?.baseCurrency || 'IDR',
     city: '',
     hub: 'Jakarta',
     start: demoMode ? '2026-11-02' : today(),
@@ -507,6 +515,7 @@ export function Dialog() {
     code: '',
     memberRole: 'Helper',
     password: '',
+    inviteEmail: original.member?.email || '',
   });
   const set = (k, v) => setF((prev) => ({ ...prev, [k]: v }));
   const initialForm = useRef(JSON.stringify(f)),
@@ -524,21 +533,36 @@ export function Dialog() {
       data.trips[0] || {
         id: '',
         currency: 'JPY',
+        baseCurrency: 'IDR',
         rate: 105,
         actual: 0,
         units: 0,
         allocation: 'none',
       },
+    selectedItem = data.items.find((i) => i.id === f.itemId),
+    // Selling currency for this form: the order's / item's / trip's base currency.
+    base = order
+      ? currencyOf(order, data.trips)
+      : initial && ['product', 'order'].includes(step)
+        ? currencyOf(initial, data.trips)
+        : step === 'manual-order' && selectedItem
+          ? currencyOf(selectedItem, data.trips)
+          : step === 'trip'
+            ? f.baseCurrency
+            : t.baseCurrency || 'IDR',
+    // Rate from any currency into the selling currency, preferring the trip's own rate.
+    toBase = (c) => (c === base ? 1 : c === t.currency ? t.rate : defaultRate(c, base)),
     qty = Math.max(1, Number(f.qty)),
-    rate = f.currency === t.currency ? t.rate : rates[f.currency],
+    rate = toBase(f.currency),
     allocation = allocate(t, data.items, {
       qty,
-      cost: Math.round(f.price * rate),
+      cost: roundTo(f.price * rate, decimalsFor(base)),
       id: initial?.id,
     }),
     calc = margin({
       price: f.price,
       currency: f.currency,
+      base,
       rate,
       markup: f.markup,
       mode: f.markupMode,
@@ -569,6 +593,7 @@ export function Dialog() {
     'refund',
     'report',
     'set-password',
+    'edit-invite',
   ];
   const dirty =
     formSteps.includes(step) &&
@@ -638,6 +663,7 @@ export function Dialog() {
     invite: 'Invite a team member',
     'invite-merchant': 'Invite merchant',
     'set-password': 'Set your password',
+    'edit-invite': 'Edit invitation',
     suspend: 'Suspend merchant',
     refund: 'Add refund note',
     report: 'Report this storefront',
@@ -766,6 +792,7 @@ export function Dialog() {
           trip: t.id,
           price: Number(f.price),
           currency: f.currency,
+          baseCurrency: base,
           rate,
           markup: Number(f.markup),
           markupMode: f.markupMode,
@@ -813,15 +840,17 @@ export function Dialog() {
         );
         close();
         await copy(
-          `Hi ${order.name.split(' ')[0]}, your quote for ${order.qty} × ${order.item} is ${money(calc.selling * order.qty)}${quoteDeposit ? `, with a ${money(quoteDeposit)} down payment to confirm` : ''}. Reply to confirm. Order ${order.id}.`,
+          `Hi ${order.name.split(' ')[0]}, your quote for ${order.qty} × ${order.item} is ${money(calc.selling * order.qty, false, base)}${quoteDeposit ? `, with a ${money(quoteDeposit, false, base)} down payment to confirm` : ''}. Reply to confirm. Order ${order.id}.`,
         );
       } else if (step === 'payment') {
         const o = data.orders.find((o) => o.id === order.id);
-        if (Number(f.amount) <= 0 || Number(f.amount) > o.total - o.paid) {
+        const d = decimalsFor(base),
+          amount = roundTo(f.amount, d);
+        if (amount <= 0 || amount > roundTo(o.total - o.paid, d)) {
           setError('Enter an amount above zero and no more than the outstanding balance.');
           return;
         }
-        const paid = o.paid + Number(f.amount);
+        const paid = roundTo(o.paid + amount, d);
         await requireSaved(
           updateOrder(o.id, {
             paid,
@@ -833,7 +862,7 @@ export function Dialog() {
             payments: [
               ...(o.payments || []),
               {
-                amount: Number(f.amount),
+                amount,
                 method: f.paymentMethod,
                 date: demoMode ? '10 Oct 2026' : today(),
                 proof,
@@ -843,16 +872,11 @@ export function Dialog() {
         );
         close();
       } else if (step === 'purchase') {
-        const actualRate =
-          f.actualCurrency === 'IDR'
-            ? 1
-            : f.actualCurrency === t.currency
-              ? t.rate
-              : rates[f.actualCurrency];
+        const actualRate = toBase(f.actualCurrency);
         await requireSaved(
           updateOrder(order.id, {
             status: 'Purchased',
-            actualCost: Math.round(f.actualPrice * actualRate),
+            actualCost: roundTo(f.actualPrice * actualRate, decimalsFor(base)),
             purchaseFxRate: actualRate,
           }),
         );
@@ -867,17 +891,18 @@ export function Dialog() {
           end: f.end,
           dates: `${new Date(f.start + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}–${new Date(f.end + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`,
           currency: f.currency,
-          rate: rates[f.currency],
+          baseCurrency: f.baseCurrency,
+          rate: defaultRate(f.currency, f.baseCurrency),
           budget: Number(f.budget),
           actual: 0,
           units: Number(f.units),
           allocation: 'even',
           status: 'Planning',
         };
+        sessionStorage.setItem('jo-trip', tr.id);
         await requireSaved(
           change((d) => ({ ...d, trips: [...d.trips, tr] }), `${tr.name} created.`),
         );
-        sessionStorage.setItem('jo-trip', tr.id);
         close();
       } else if (step === 'budget') {
         const tr = original.trip;
@@ -885,19 +910,16 @@ export function Dialog() {
           setError('Closed trips are read-only.');
           return;
         }
-        const fx =
-          f.expenseCurrency === 'IDR'
-            ? 1
-            : f.expenseCurrency === tr.currency
-              ? tr.rate
-              : rates[f.expenseCurrency];
+        const fx = toBase(f.expenseCurrency),
+          d = decimalsFor(base);
         const b = {
           id: original.budget?.id || recordId('EX-'),
           trip: tr.id,
+          baseCurrency: base,
           category: f.categoryBudget,
           description: f.description,
-          planned: Math.round(f.planned * fx),
-          actual: Math.round(f.actual * fx),
+          planned: roundTo(f.planned * fx, d),
+          actual: roundTo(f.actual * fx, d),
           currency: f.expenseCurrency,
           rate: fx,
           receipt: proof,
@@ -985,6 +1007,26 @@ export function Dialog() {
           emailError
             ? `Invitation saved, but the email couldn’t be sent (${emailError}). The link is copied — send it to ${email} yourself.`
             : `Invitation emailed to ${email}. The link is also copied in case they need it.`,
+        );
+      } else if (step === 'edit-invite') {
+        const email = f.inviteEmail.trim().toLowerCase();
+        await rpc('jastip_update_invitation', {
+          p_workspace: data.workspaceId,
+          p_invitation: original.member.id,
+          p_email: email,
+        });
+        let emailError = '';
+        try {
+          await sendInviteEmail(email, original.member.id);
+        } catch (error) {
+          emailError = error.message;
+        }
+        close();
+        await reload({ quiet: true });
+        announce(
+          emailError
+            ? `Invitation changed to ${email}, but the email couldn’t be sent (${emailError}). Copy the link instead.`
+            : `Invitation changed and sent to ${email}.`,
         );
       } else if (step === 'set-password') {
         const { error } = await supabase.auth.updateUser({
@@ -1177,7 +1219,7 @@ export function Dialog() {
               onChange={(e) => set('markupMode', e.target.value)}
             >
               <option value="percent">%</option>
-              <option value="amount">IDR</option>
+              <option value="amount">{base}</option>
             </select>
           </div>
         </Field>
@@ -1198,24 +1240,24 @@ export function Dialog() {
           <span>
             Product cost
             <small>
-              1 {f.currency} = {money(rate)}
+              1 {f.currency} = {money(rate, false, base)}
             </small>
           </span>
-          <strong>{money(calc.purchase)}</strong>
+          <strong>{money(calc.purchase, false, base)}</strong>
         </div>
         <div>
           <span>Allocated trip cost / item</span>
-          <strong>{money(allocation)}</strong>
+          <strong>{money(allocation, false, base)}</strong>
         </div>
         <div>
           <span>Landed cost</span>
-          <strong>{money(calc.landed)}</strong>
+          <strong>{money(calc.landed, false, base)}</strong>
         </div>
         <div className="selling-row">
           <span>
-            Selling price<small>Rounded to Rp 1.000</small>
+            Selling price<small>Rounded to {money(stepFor(base), false, base)}</small>
           </span>
-          <strong>{money(calc.selling)}</strong>
+          <strong>{money(calc.selling, false, base)}</strong>
         </div>
         {role !== 'Helper' && (
           <div
@@ -1223,7 +1265,7 @@ export function Dialog() {
           >
             <span>Estimated margin</span>
             <strong>
-              {money(calc.profit)}
+              {money(calc.profit, false, base)}
               <small>{calc.percent.toFixed(1)}%</small>
             </strong>
           </div>
@@ -1239,7 +1281,7 @@ export function Dialog() {
       hint={
         f.depositMode === 'none'
           ? 'Ask for a DP on pricey finds or custom requests.'
-          : `${money(depositExample)} due ${step === 'quote' ? 'on this order' : 'per item'} before you purchase.`
+          : `${money(depositExample, false, base)} due ${step === 'quote' ? 'on this order' : 'per item'} before you purchase.`
       }
     >
       <div className="input-combo dp-combo">
@@ -1250,7 +1292,7 @@ export function Dialog() {
         >
           <option value="none">No DP</option>
           <option value="percent">% of total</option>
-          <option value="amount">IDR per item</option>
+          <option value="amount">{base} per item</option>
         </select>
         {f.depositMode !== 'none' && (
           <input
@@ -1456,7 +1498,7 @@ export function Dialog() {
                   </div>
                   <div>
                     <Badge status={initial.status} />
-                    <div className="detail-price">{money(initial.selling)}</div>
+                    <div className="detail-price">{money(initial.selling, false, base)}</div>
                     <p>{initial.note}</p>
                     <dl className="details-list">
                       <dt>Trip</dt>
@@ -1471,8 +1513,8 @@ export function Dialog() {
                         <>
                           <dt>Down payment</dt>
                           <dd>
-                            {money(depositFor(initial, initial.selling * qty, qty))} to confirm your
-                            order
+                            {money(depositFor(initial, initial.selling * qty, qty), false, base)} to
+                            confirm your order
                           </dd>
                         </>
                       )}
@@ -1506,12 +1548,13 @@ export function Dialog() {
                   <div className="checkout-summary">
                     <strong>{initial.name}</strong>
                     <span>
-                      {qty} × {money(initial.selling)}
+                      {qty} × {money(initial.selling, false, base)}
                     </span>
-                    <strong>{money(initial.selling * qty)}</strong>
+                    <strong>{money(initial.selling * qty, false, base)}</strong>
                     {depositFor(initial, initial.selling * qty, qty) > 0 && (
                       <small>
-                        Down payment {money(depositFor(initial, initial.selling * qty, qty))}
+                        Down payment{' '}
+                        {money(depositFor(initial, initial.selling * qty, qty), false, base)}
                       </small>
                     )}
                   </div>
@@ -1523,7 +1566,7 @@ export function Dialog() {
                           .filter((i) => i.status !== 'Draft')
                           .map((i) => (
                             <option key={i.id} value={i.id}>
-                              {i.name} · {money(i.selling)}
+                              {i.name} · {money(i.selling, false, currencyOf(i, data.trips))}
                             </option>
                           ))}
                       </select>
@@ -1595,7 +1638,7 @@ export function Dialog() {
                 </Field>
                 {tripSelect}
                 <div className="form-grid">
-                  <Field label="Budget (IDR)">
+                  <Field label={`Budget (${base})`}>
                     <input
                       type="number"
                       min="0"
@@ -1633,13 +1676,14 @@ export function Dialog() {
               <>
                 <div className="checkout-summary">
                   <span>Outstanding for {order.id}</span>
-                  <strong>{money(order.total - order.paid)}</strong>
+                  <strong>{money(order.total - order.paid, false, base)}</strong>
                 </div>
-                <Field label="Payment amount (IDR)">
+                <Field label={`Payment amount (${base})`}>
                   <input
                     type="number"
                     required
-                    min="1"
+                    step={decimalsFor(base) ? '0.01' : '1'}
+                    min={decimalsFor(base) ? '0.01' : '1'}
                     max={order.total - order.paid}
                     value={f.amount}
                     onChange={(e) => set('amount', e.target.value)}
@@ -1661,7 +1705,8 @@ export function Dialog() {
                 </Field>
                 {order.deposit > 0 && order.paid < order.deposit && (
                   <Callout icon="Info">
-                    Down payment due: {money(order.deposit - order.paid)} before purchasing.
+                    Down payment due: {money(order.deposit - order.paid, false, base)} before
+                    purchasing.
                   </Callout>
                 )}
                 <p className="footnote">
@@ -1699,7 +1744,7 @@ export function Dialog() {
                 <div className="margin-block">
                   <div>
                     <span>Estimated product cost</span>
-                    <strong>{money(order.quotedCost)}</strong>
+                    <strong>{money(order.quotedCost, false, base)}</strong>
                   </div>
                   {role !== 'Helper' && (
                     <div className="profit-row">
@@ -1707,16 +1752,11 @@ export function Dialog() {
                       <strong>
                         {money(
                           order.total -
-                            (Math.round(
-                              f.actualPrice *
-                                (f.actualCurrency === 'IDR'
-                                  ? 1
-                                  : f.actualCurrency === t.currency
-                                    ? t.rate
-                                    : rates[f.actualCurrency]),
-                            ) +
+                            (roundTo(f.actualPrice * toBase(f.actualCurrency), decimalsFor(base)) +
                               order.allocation) *
                               order.qty,
+                          false,
+                          base,
                         )}
                       </strong>
                     </div>
@@ -1767,13 +1807,28 @@ export function Dialog() {
                   </Field>
                 </div>
                 <div className="form-grid">
-                  <Field label="Purchase currency">
+                  <Field label="Buying currency" hint="What you pay in at the destination.">
                     <select value={f.currency} onChange={(e) => set('currency', e.target.value)}>
                       {Object.keys(rates).map((c) => (
                         <option key={c}>{c}</option>
                       ))}
                     </select>
                   </Field>
+                  <Field label="Selling currency" hint="What your customers pay in for this trip.">
+                    <select
+                      aria-label="Selling currency"
+                      value={f.baseCurrency}
+                      onChange={(e) => set('baseCurrency', e.target.value)}
+                    >
+                      {Object.entries(currencyNames).map(([c, label]) => (
+                        <option key={c} value={c}>
+                          {c} · {label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+                <div className="form-grid">
                   <Field
                     label="Estimated total item units"
                     hint="Used to divide trip expenses evenly across items."
@@ -1787,7 +1842,7 @@ export function Dialog() {
                       onChange={(e) => set('units', e.target.value)}
                     />
                   </Field>
-                  <Field label="Planned budget (IDR)">
+                  <Field label={`Planned budget (${f.baseCurrency})`}>
                     <input
                       required
                       type="number"
@@ -1797,7 +1852,12 @@ export function Dialog() {
                     />
                   </Field>
                 </div>
-                <Callout>Base currency is IDR. Your trip starts in Planning.</Callout>
+                <Callout>
+                  1 {f.currency} ≈{' '}
+                  {money(defaultRate(f.currency, f.baseCurrency), false, f.baseCurrency)} to start —
+                  you can fine-tune the rate in Settings → Currency. The selling currency locks once
+                  the trip has items or orders. Your trip starts in Planning.
+                </Callout>
               </>
             )}
             {step === 'budget' && (
@@ -1921,7 +1981,7 @@ export function Dialog() {
                 </h3>
                 {step === 'confirmation' && Number(tracking.deposit) > 0 && (
                   <Callout icon="Wallet">
-                    Down payment: {money(tracking.deposit)} to confirm this order.
+                    Down payment: {money(tracking.deposit, false, base)} to confirm this order.
                   </Callout>
                 )}
                 <p>
@@ -2087,6 +2147,25 @@ export function Dialog() {
                 </p>
               </>
             )}
+            {step === 'edit-invite' && (
+              <>
+                <Field
+                  label="Email address"
+                  hint="The old link stops working for the previous address."
+                >
+                  <input
+                    required
+                    type="email"
+                    value={f.inviteEmail}
+                    onChange={(e) => set('inviteEmail', e.target.value)}
+                  />
+                </Field>
+                <p className="footnote">
+                  Joined members sign in with their own email, so it can’t be changed here. Remove
+                  them and invite the new address instead.
+                </p>
+              </>
+            )}
             {step === 'set-password' && (
               <>
                 <p>
@@ -2230,7 +2309,9 @@ export function Dialog() {
                                             ? 'Save invitation'
                                             : step === 'set-password'
                                               ? 'Save password'
-                                              : 'Save'}
+                                              : step === 'edit-invite'
+                                                ? 'Save and resend'
+                                                : 'Save'}
               </Button>
             )}
           </div>

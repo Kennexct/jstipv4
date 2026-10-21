@@ -49,6 +49,9 @@ export function Provider({ children, initialSeed }) {
     timer = useRef(),
     chord = useRef(0),
     connectionRef = useRef(connection),
+    sessionRef = useRef(null),
+    accountPrefs = useRef(null),
+    prefTimer = useRef(),
     guards = useRef(new Map()),
     dialogCloser = useRef(null),
     routeTimer = useRef(),
@@ -95,6 +98,8 @@ export function Provider({ children, initialSeed }) {
     try {
       preferences = JSON.parse(localStorage.getItem('jastip-preferences')) || preferences;
     } catch {}
+    // Account-level appearance (synced across devices) wins over this device's copy.
+    if (accountPrefs.current) preferences = { ...preferences, ...accountPrefs.current };
     setRawData({ ...value, preferences });
     dataRef.current = { ...value, preferences };
     if (!demoMode) setRole(value.role || 'Owner');
@@ -121,6 +126,8 @@ export function Provider({ children, initialSeed }) {
       } = await supabase.auth.getSession();
       if (error) throw error;
       setSession(s);
+      sessionRef.current = s;
+      accountPrefs.current = s?.user?.user_metadata?.preferences || accountPrefs.current;
       let result;
       if (route() === 'Storefront') {
         const slug = publicSlug() || dataRef.current.shop.slug;
@@ -202,6 +209,8 @@ export function Provider({ children, initialSeed }) {
     supportRef.current = false;
     activeWorkspace.current = null;
     sessionStorage.removeItem('jastip-password-recovery');
+    accountPrefs.current = null;
+    sessionRef.current = null;
     install(emptyWorkspace());
     setSession(null);
     setConnection('signedout');
@@ -251,7 +260,17 @@ export function Provider({ children, initialSeed }) {
     }
     setRawData(next);
     dataRef.current = next;
-    localStorage.setItem('jastip-preferences', JSON.stringify(next.preferences));
+    try {
+      localStorage.setItem('jastip-preferences', JSON.stringify(next.preferences));
+    } catch {}
+    if (!demoMode && supabase && sessionRef.current) {
+      accountPrefs.current = next.preferences;
+      clearTimeout(prefTimer.current);
+      prefTimer.current = setTimeout(
+        () => supabase.auth.updateUser({ data: { preferences: next.preferences } }).catch(() => {}),
+        600,
+      );
+    }
   };
   const change = async (fn, message, { publicAction = false } = {}) => {
     if (supportRef.current && !publicAction) {
@@ -367,6 +386,7 @@ export function Provider({ children, initialSeed }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
+      sessionRef.current = s;
       if (
         event === 'PASSWORD_RECOVERY' ||
         (s && sessionStorage.getItem('jastip-password-recovery') === 'true')
@@ -374,7 +394,7 @@ export function Provider({ children, initialSeed }) {
         location.hash = 'Recovery';
         setPage('Recovery');
       }
-      if (event !== 'TOKEN_REFRESHED') setTimeout(() => reload(), 0);
+      if (!['TOKEN_REFRESHED', 'USER_UPDATED'].includes(event)) setTimeout(() => reload(), 0);
     });
     return () => {
       generation.current++;

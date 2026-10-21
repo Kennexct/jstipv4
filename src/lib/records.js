@@ -17,7 +17,13 @@ export const emptyWorkspace = () => ({
   reports: [],
   shop: { name: 'Your workspace', slug: '', bio: '', contact: '' },
   plan: 'Starter',
-  preferences: { theme: 'light', accent: 'indigo', density: 'comfortable', motion: 'full' },
+  preferences: {
+    theme: 'light',
+    accent: 'indigo',
+    density: 'comfortable',
+    motion: 'full',
+    tint: 'subtle',
+  },
 });
 export function changesBetween(previous, next) {
   return collections.flatMap((kind) => {

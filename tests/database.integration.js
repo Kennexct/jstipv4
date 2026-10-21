@@ -256,3 +256,78 @@ test('owner invites a teammate by email; the link signs them in and they join', 
   expect(errors).toEqual([]);
   await helper.close();
 });
+test('SGD trip prices validate on the server; storefront theme and team edits persist', async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(120000);
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await session(page);
+  await page.goto('/#Trips');
+  await page.getByRole('button', { name: 'New trip', exact: true }).first().click();
+  await page.getByLabel('Trip name').fill('Tokyo for Singapore');
+  await page.getByLabel('Shopping destination').fill('Tokyo');
+  await page.getByLabel('Selling currency').selectOption('SGD');
+  await page.getByRole('button', { name: 'Create trip' }).click();
+  await expect(page.getByText('Sell in SGD')).toBeVisible();
+  await page.getByLabel('Trip status').selectOption('Open for orders');
+  await expect(page.getByText('Tokyo for Singapore moved to Open for orders.')).toBeVisible();
+  await page.goto('/#Items');
+  await page.getByRole('button', { name: 'Add item', exact: true }).first().click();
+  await page
+    .getByRole('dialog')
+    .getByLabel('Trip', { exact: true })
+    .selectOption({ label: 'Tokyo for Singapore' });
+  await page.getByLabel('Item name').fill('Singapore matcha');
+  await page.getByLabel('Purchase price', { exact: true }).fill('3333');
+  await page.getByLabel('Quantity', { exact: true }).fill('4');
+  await page.getByRole('button', { name: 'Post item' }).click();
+  await expect(page.locator('.item-card').filter({ hasText: 'Singapore matcha' })).toContainText(
+    'S$',
+  );
+  await page.goto('/#Settings');
+  await page.getByRole('button', { name: 'Storefront', exact: true }).click();
+  await page.getByRole('radio', { name: /Trip showcase/ }).click();
+  await page.getByRole('radio', { name: 'teal storefront colour' }).click();
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Storefront settings saved.')).toBeVisible();
+  const buyer = await browser.newPage();
+  buyer.on('pageerror', (e) => errors.push(e.message));
+  await buyer.goto('http://127.0.0.1:3002/#Storefront/actual-shop');
+  await expect(buyer.locator('.storefront.store-showcase')).toBeVisible();
+  const card = buyer.locator('.store-product').filter({ hasText: 'Singapore matcha' });
+  await expect(card).toContainText('S$');
+  await card.click();
+  await buyer.getByRole('button', { name: 'Order this item' }).click();
+  await buyer.getByLabel('Your name').fill('SG Buyer');
+  await buyer.getByLabel('WhatsApp number').fill('6581234567');
+  await buyer.getByLabel('Delivery address').fill('Singapore 238859');
+  await buyer.getByRole('checkbox').check();
+  await buyer.getByRole('button', { name: 'Place order' }).click();
+  await expect(buyer.getByText('Private tracking token', { exact: true })).toBeVisible();
+  await page.goto('/#Orders');
+  await expect(page.locator('tr').filter({ hasText: 'SG Buyer' })).toContainText('S$');
+  await page.goto('/#Settings');
+  await page.getByRole('button', { name: 'Team & roles', exact: true }).click();
+  await page.getByRole('button', { name: 'Invite member' }).click();
+  await page.getByLabel('Email address').fill('typo@exmaple.com');
+  await page.getByRole('button', { name: 'Send invitation' }).click();
+  await expect(page.getByText(/Invitation emailed to typo@exmaple.com/)).toBeVisible();
+  await page.getByRole('button', { name: 'Edit email' }).click();
+  await page.getByLabel('Email address').fill('fixed@example.com');
+  await page.getByRole('button', { name: 'Save and resend' }).click();
+  await expect(page.getByText('Invitation changed and sent to fixed@example.com.')).toBeVisible();
+  await expect(page.locator('.member-row').filter({ hasText: 'fixed@example.com' })).toBeVisible();
+  await page.getByRole('button', { name: /Remove .*helper/i }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Remove member' }).click();
+  await expect(page.getByText(/was removed/)).toBeVisible();
+  await expect(page.locator('.member-row').filter({ hasText: 'helper@example.com' })).toHaveCount(
+    0,
+  );
+  await page.getByRole('button', { name: 'Cancel invitation for fixed@example.com' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel invitation' }).click();
+  await expect(page.locator('.member-row').filter({ hasText: 'fixed@example.com' })).toHaveCount(0);
+  expect(errors).toEqual([]);
+  await buyer.close();
+});

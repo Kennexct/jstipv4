@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useOps } from './store';
-import { money, orderProfit, stockLabel } from './money';
+import { money, orderProfit, stockLabel, currencyOf, moneyTotals } from './money';
 import { tripStatuses, planDetails } from './data';
 import { walkthroughDone } from './lib/records';
 import {
@@ -20,9 +20,35 @@ import {
   RevenueChart,
   ProductArt,
   PayBadge,
+  CurrencySwitch,
 } from './ui';
+// Selling currencies in use, most-used first; the choice is remembered for the session.
+export function useViewCurrency() {
+  const {
+    data: { trips, orders },
+  } = useOps();
+  const count = (c) => orders.filter((o) => currencyOf(o, trips) === c).length;
+  const options = [...new Set(trips.map((t) => t.baseCurrency || 'IDR'))].sort(
+    (a, b) => count(b) - count(a),
+  );
+  const [pick, setPick] = useState(() => {
+    try {
+      return sessionStorage.getItem('jo-view-currency');
+    } catch {
+      return null;
+    }
+  });
+  const currency = options.includes(pick) ? pick : options[0] || 'IDR';
+  const set = (c) => {
+    setPick(c);
+    try {
+      sessionStorage.setItem('jo-view-currency', c);
+    } catch {}
+  };
+  return [currency, set, options.length ? options : ['IDR']];
+}
 export function OrdersTable({ orders, compact = false, selected = [], onSelect }) {
-  const { setDrawer, demoMode } = useOps();
+  const { setDrawer, demoMode, data } = useOps();
   return (
     <div className="table-wrap">
       <table>
@@ -99,12 +125,12 @@ export function OrdersTable({ orders, compact = false, selected = [], onSelect }
               </td>
               {!compact && <td className="muted">{o.source}</td>}
               <td className="num">
-                {money(o.total)}
+                {money(o.total, false, currencyOf(o, data.trips))}
                 <small className={o.paid < o.total ? 'amber' : ''}>
                   {o.paid === o.total
                     ? 'Fully paid'
                     : o.paid
-                      ? money(o.paid) + ' paid'
+                      ? money(o.paid, false, currencyOf(o, data.trips)) + ' paid'
                       : 'Awaiting payment'}
                 </small>
               </td>
@@ -122,7 +148,8 @@ export function OrdersTable({ orders, compact = false, selected = [], onSelect }
 export function Overview() {
   const { data, navigate, setDialog, demoMode, role } = useOps();
   const { orders, trips, items } = data;
-  const live = orders.filter((o) => o.status !== 'Cancelled'),
+  const [currency, setCurrency, currencies] = useViewCurrency();
+  const live = orders.filter((o) => o.status !== 'Cancelled' && currencyOf(o, trips) === currency),
     revenue = live.reduce((a, o) => a + o.total, 0),
     profit = live.reduce((a, o) => a + orderProfit(o), 0),
     open = live.filter((o) => o.status !== 'Delivered'),
@@ -141,6 +168,7 @@ export function Overview() {
           }) + ' · Here’s how your business is doing.'
         }
       >
+        <CurrencySwitch value={currency} options={currencies} onChange={setCurrency} />
         <Button icon="ExternalLink" onClick={() => navigate('Storefront')}>
           View storefront
         </Button>
@@ -152,14 +180,14 @@ export function Overview() {
         stats={[
           {
             label: 'Total revenue',
-            value: money(revenue, true),
+            value: money(revenue, true, currency),
             caption: demoMode ? '+18.6% · illustrative comparison' : 'Non-cancelled orders',
             tone: 'green',
             icon: 'Wallet',
           },
           {
             label: 'Estimated profit',
-            value: money(profit, true),
+            value: money(profit, true, currency),
             caption: 'After product & trip costs',
             icon: 'TrendingUp',
           },
@@ -197,7 +225,8 @@ export function Overview() {
           <div>
             <strong>A little attention goes a long way</strong>
             <span>
-              {pending.length} new requests and {money(unpaid)} in outstanding payments.
+              {pending.length} new requests and {money(unpaid, false, currency)} in outstanding
+              payments.
             </span>
           </div>
           <Button icon="ArrowRight" onClick={() => navigate('Orders')}>
@@ -214,12 +243,12 @@ export function Overview() {
             </span>
           </div>
           <div className="chart-summary">
-            <strong>{money(revenue)}</strong>
+            <strong>{money(revenue, false, currency)}</strong>
             <span className="muted">
               {demoMode ? '18.6% vs. last month · sample' : 'Non-cancelled orders · all time'}
             </span>
           </div>
-          <RevenueChart />
+          <RevenueChart currency={currency} />
         </section>
         <section className="panel active-trips">
           <div className="panel-head">
@@ -440,7 +469,7 @@ export function Items() {
               </button>
               <span className="muted">{trips.find((t) => t.id === i.trip)?.name}</span>
               <div className="item-price">
-                <strong>{money(i.selling)}</strong>
+                <strong>{money(i.selling, false, currencyOf(i, trips))}</strong>
                 <small>{stockLabel(i)}</small>
               </div>
               {role !== 'Helper' && (
@@ -567,6 +596,11 @@ export function Trips() {
   } = useOps();
   const [id, setId] = useState(() => sessionStorage.getItem('jo-trip') || trips[0]?.id || ''),
     [view, setView] = useState('All');
+  // A newly created trip becomes the selected one.
+  useEffect(() => {
+    const created = sessionStorage.getItem('jo-trip');
+    if (created && trips.some((t) => t.id === created)) setId(created);
+  }, [trips.length]);
   if (!trips.length)
     return (
       <>
@@ -601,7 +635,8 @@ export function Trips() {
     os = orders.filter((o) => o.trip === t.id && o.status !== 'Cancelled'),
     revenue = os.reduce((a, o) => a + o.total, 0),
     cost = os.reduce((a, o) => a + (o.actualCost ?? o.quotedCost) * o.qty, 0),
-    result = revenue - cost - t.actual;
+    result = revenue - cost - t.actual,
+    tcur = t.baseCurrency || 'IDR';
   return (
     <>
       <Header title="Trips" description="A clear plan for where you’re going and what you’ll earn.">
@@ -656,7 +691,7 @@ export function Trips() {
           <div>
             <h2>{t.name}</h2>
             <p>
-              {t.city} → {t.hub} · {t.dates}
+              {t.city} → {t.hub} · {t.dates} · Buy in {t.currency} · Sell in {tcur}
             </p>
           </div>
           <select
@@ -684,22 +719,26 @@ export function Trips() {
           stats={[
             {
               label: 'Order revenue',
-              value: money(revenue, true),
+              value: money(revenue, true, tcur),
               caption: `${os.length} recorded orders`,
             },
             {
               label: 'Planned budget',
-              value: money(t.budget, true),
+              value: money(t.budget, true, tcur),
               caption: `${lines.length} expense categories`,
             },
             {
               label: 'Actual spend',
-              value: money(t.actual, true),
+              value: money(t.actual, true, tcur),
               caption: `${t.budget ? Math.round(t.budget ? (t.actual / t.budget) * 100 : 0) : 0}% of planned budget`,
             },
             {
               label: 'Allocation / item',
-              value: money(t.allocation === 'none' ? 0 : Math.round(t.actual / t.units)),
+              value: money(
+                t.allocation === 'none' ? 0 : Math.round(t.actual / t.units),
+                false,
+                tcur,
+              ),
               caption:
                 t.allocation === 'none' ? 'No trip cost allocation' : 'Based on expected units',
             },
@@ -753,8 +792,8 @@ export function Trips() {
                     </span>
                   </td>
                   <td className="muted">{b.description}</td>
-                  <td className="num">{money(b.planned)}</td>
-                  <td className="num">{money(b.actual)}</td>
+                  <td className="num">{money(b.planned, false, tcur)}</td>
+                  <td className="num">{money(b.actual, false, tcur)}</td>
                   <td>
                     <div className="budget-progress">
                       <Progress value={b.planned ? (b.actual / b.planned) * 100 : 0} />
@@ -777,8 +816,8 @@ export function Trips() {
             <tfoot>
               <tr>
                 <td colSpan="2">Total</td>
-                <td className="num">{money(t.budget)}</td>
-                <td className="num">{money(t.actual)}</td>
+                <td className="num">{money(t.budget, false, tcur)}</td>
+                <td className="num">{money(t.actual, false, tcur)}</td>
                 <td colSpan="2" className={t.actual > t.budget ? 'red' : 'green'}>
                   {t.actual > t.budget ? 'Over budget' : 'Within budget'}
                 </td>
@@ -827,10 +866,11 @@ export function Trips() {
           </div>
           <dl className="details-list">
             <dt>Product cost</dt>
-            <dd>{money(cost)}</dd>
+            <dd>{money(cost, false, tcur)}</dd>
             <dt>Net result</dt>
             <dd className={result < 0 ? 'red' : 'green'}>
-              {money(result)} · {revenue ? ((result / revenue) * 100).toFixed(1) + '%' : '—'}
+              {money(result, false, tcur)} ·{' '}
+              {revenue ? ((result / revenue) * 100).toFixed(1) + '%' : '—'}
             </dd>
           </dl>
         </section>
@@ -853,11 +893,14 @@ export function Purchasing() {
     demoMode,
   } = useOps();
   const [trip, setTrip] = useState('all'),
-    [view, setView] = useState('Checklist');
+    [view, setView] = useState('Checklist'),
+    [currency, setCurrency, currencies] = useViewCurrency();
   // Confirmed orders can be bought before the customer pays in full; only the DP must be in.
   const list = orders.filter(
     (o) =>
-      ['Confirmed', 'Paid', 'Purchased'].includes(o.status) && (trip === 'all' || o.trip === trip),
+      ['Confirmed', 'Paid', 'Purchased'].includes(o.status) &&
+      currencyOf(o, trips) === currency &&
+      (trip === 'all' || o.trip === trip),
   );
   const toBuy = list.filter((o) => o.status !== 'Purchased'),
     bought = list.filter((o) => o.status === 'Purchased'),
@@ -892,6 +935,7 @@ export function Purchasing() {
         title="Purchase checklist"
         description="Everything confirmed for this trip, ready for your shopping day and your end-of-trip recap."
       >
+        <CurrencySwitch value={currency} options={currencies} onChange={setCurrency} />
         {list.length > 0 && (
           <Button
             icon="Download"
@@ -930,7 +974,7 @@ export function Purchasing() {
           },
           {
             label: 'Still to collect',
-            value: money(outstanding),
+            value: money(outstanding, false, currency),
             caption: outstanding ? 'Remind before shipping' : 'All paid',
             tone: outstanding ? 'amber' : '',
             icon: 'Wallet',
@@ -979,9 +1023,11 @@ export function Purchasing() {
                       {r.bought} / {r.units}
                     </td>
                     <td className="mono">{r.orders}</td>
-                    {role !== 'Helper' && <td className="mono">{money(r.estimate)}</td>}
+                    {role !== 'Helper' && (
+                      <td className="mono">{money(r.estimate, false, currency)}</td>
+                    )}
                     <td className={`mono ${r.outstanding ? 'amber' : ''}`}>
-                      {money(r.outstanding)}
+                      {money(r.outstanding, false, currency)}
                     </td>
                   </tr>
                 ))}
@@ -1032,7 +1078,7 @@ export function Purchasing() {
                   <span className="muted">
                     {role === 'Helper'
                       ? 'Manager records purchase cost'
-                      : money(o.quotedCost * o.qty) + ' estimated'}
+                      : money(o.quotedCost * o.qty, false, currency) + ' estimated'}
                   </span>
                   <span className="purchase-badges">
                     <PayBadge order={o} />
@@ -1058,10 +1104,12 @@ export function Reports() {
   } = useOps();
   const [trip, setTrip] = useState('all'),
     [period, setPeriod] = useState('All time'),
-    [group, setGroup] = useState('By trip');
+    [group, setGroup] = useState('By trip'),
+    [currency, setCurrency, currencies] = useViewCurrency();
   const list = orders.filter(
     (o) =>
       o.status !== 'Cancelled' &&
+      currencyOf(o, trips) === currency &&
       (trip === 'all' || o.trip === trip) &&
       (period === 'All time' ||
         (period === 'This month' &&
@@ -1079,7 +1127,9 @@ export function Reports() {
     unpaid = list.reduce((a, o) => a + Math.max(0, o.total - o.paid), 0);
   const entities =
     group === 'By trip'
-      ? trips.map((t) => ({ name: t.name, match: (o) => o.trip === t.id }))
+      ? trips
+          .filter((t) => (t.baseCurrency || 'IDR') === currency)
+          .map((t) => ({ name: t.name, match: (o) => o.trip === t.id }))
       : group === 'By product'
         ? items.map((i) => ({ name: i.name, match: (o) => o.itemId === i.id }))
         : [
@@ -1104,6 +1154,7 @@ export function Reports() {
   return (
     <>
       <Header title="Reports" description="Understand what made money, and what you can improve.">
+        <CurrencySwitch value={currency} options={currencies} onChange={setCurrency} />
         <Button icon="Download" onClick={() => exportCsv(rows, 'sales-report')}>
           Export CSV
         </Button>
@@ -1122,12 +1173,24 @@ export function Reports() {
       </div>
       <Stats
         stats={[
-          { label: 'Revenue', value: money(revenue, true), caption: 'Across selected orders' },
-          { label: 'Product cost', value: money(cost, true), caption: 'Stored purchase estimates' },
-          { label: 'Net profit', value: money(net, true), caption: 'After allocated trip costs' },
+          {
+            label: 'Revenue',
+            value: money(revenue, true, currency),
+            caption: 'Across selected orders',
+          },
+          {
+            label: 'Product cost',
+            value: money(cost, true, currency),
+            caption: 'Stored purchase estimates',
+          },
+          {
+            label: 'Net profit',
+            value: money(net, true, currency),
+            caption: 'After allocated trip costs',
+          },
           {
             label: 'Outstanding',
-            value: money(unpaid, true),
+            value: money(unpaid, true, currency),
             caption: 'Follow up with customers',
             tone: 'amber',
           },
@@ -1139,7 +1202,7 @@ export function Reports() {
             <h2>Revenue trend</h2>
             <small>Illustrative · {period}</small>
           </div>
-          <RevenueChart />
+          <RevenueChart currency={currency} />
         </section>
         <section className="panel margin-report">
           <div className="panel-head">
@@ -1182,8 +1245,8 @@ export function Reports() {
                 <tr key={r.name}>
                   <td>{r.name}</td>
                   <td className="num">{r.orders}</td>
-                  <td className="num">{money(r.revenue)}</td>
-                  <td className="num">{money(r.profit)}</td>
+                  <td className="num">{money(r.revenue, false, currency)}</td>
+                  <td className="num">{money(r.profit, false, currency)}</td>
                   <td className="num">{r.margin}</td>
                 </tr>
               ))}
@@ -1205,7 +1268,7 @@ export function Reports() {
 }
 export function Customers() {
   const {
-    data: { orders, customers },
+    data: { orders, customers, trips },
     setDialog,
     setDrawer,
     exportCsv,
@@ -1267,8 +1330,10 @@ export function Customers() {
                   <td className="muted">+{c.phone}</td>
                   <td className="muted">{c.address}</td>
                   <td className="num">
-                    {money(
-                      orders.filter((o) => o.phone === c.phone).reduce((a, o) => a + o.total, 0),
+                    {moneyTotals(
+                      orders.filter((o) => o.phone === c.phone && o.status !== 'Cancelled'),
+                      trips,
+                      (o) => o.total,
                     )}
                   </td>
                 </tr>

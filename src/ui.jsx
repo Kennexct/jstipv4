@@ -4,6 +4,7 @@ import React, { useId, useEffect, useRef } from 'react';
 import { paymentState } from './money';
 import {
   Circle,
+  Trash2,
   Mail,
   Send,
   Link2,
@@ -76,6 +77,7 @@ import {
 } from 'lucide-react';
 const icons = {
   Circle,
+  Trash2,
   Mail,
   Send,
   Link2,
@@ -383,8 +385,8 @@ export function Overlay({ children, onClose, drawer = false, label, title }) {
     </div>
   );
 }
-export function RevenueChart() {
-  if (!demoMode) return <LiveRevenueChart />;
+export function RevenueChart({ currency = 'IDR' }) {
+  if (!demoMode) return <LiveRevenueChart currency={currency} />;
   return (
     <>
       <div className="revenue-chart">
@@ -609,5 +611,23 @@ export function SaveBar({ dirty, busy, onSave, onDiscard, label = 'Save changes'
         {busy ? 'Saving…' : label}
       </button>
     </div>
+  );
+}
+// Totals are never converted between currencies: pick which selling currency to view.
+export function CurrencySwitch({ value, options, onChange }) {
+  if (options.length < 2) return null;
+  return (
+    <select
+      className="currency-switch"
+      aria-label="Show totals in currency"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {options.map((c) => (
+        <option key={c} value={c}>
+          Totals in {c}
+        </option>
+      ))}
+    </select>
   );
 }

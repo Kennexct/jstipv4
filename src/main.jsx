@@ -85,7 +85,9 @@ function App() {
   return (
     <>
       <TopProgress active={routeLoading || pageLoading} />
-      {confirm && <ConfirmDialog onConfirm={confirm.proceed} onCancel={() => setConfirm(null)} />}
+      {confirm && (
+        <ConfirmDialog {...confirm} onConfirm={confirm.proceed} onCancel={() => setConfirm(null)} />
+      )}
       <a
         className="skip-link"
         href="#main"

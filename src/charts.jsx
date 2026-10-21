@@ -1,7 +1,7 @@
 import React from 'react';
 import { useOps } from './store';
-import { money } from './money';
-export function LiveRevenueChart() {
+import { money, currencyOf } from './money';
+export function LiveRevenueChart({ currency = 'IDR' }) {
   const { data } = useOps();
   const end = new Date();
   end.setUTCHours(0, 0, 0, 0);
@@ -12,7 +12,12 @@ export function LiveRevenueChart() {
     return {
       key,
       value: data.orders
-        .filter((o) => o.status !== 'Cancelled' && (o.createdAt || o.date).slice(0, 10) === key)
+        .filter(
+          (o) =>
+            o.status !== 'Cancelled' &&
+            currencyOf(o, data.trips) === currency &&
+            (o.createdAt || o.date).slice(0, 10) === key,
+        )
         .reduce((sum, o) => sum + o.total, 0),
     };
   });
@@ -22,8 +27,8 @@ export function LiveRevenueChart() {
     <>
       <div className="revenue-chart live-chart">
         <div className="chart-y">
-          <span>{money(max === 1 ? 0 : max, true)}</span>
-          <span>{money(max === 1 ? 0 : max / 2, true)}</span>
+          <span>{money(max === 1 ? 0 : max, true, currency)}</span>
+          <span>{money(max === 1 ? 0 : max / 2, true, currency)}</span>
           <span>0</span>
         </div>
         <div className="chart-body">
@@ -47,7 +52,7 @@ export function LiveRevenueChart() {
                 fill="var(--accent)"
               >
                 <title>
-                  {d.key}: {money(d.value)}
+                  {d.key}: {money(d.value, false, currency)}
                 </title>
               </circle>
             ))}

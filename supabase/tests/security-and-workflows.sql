@@ -102,4 +102,40 @@ do $$declare d jsonb;o jsonb;it jsonb;begin d:=public.jastip_load_workspace();
  perform public.test_assert((it->>'qty')::int=1,'Cancelling a limited order releases stock');
 end$$;
 reset role;
-select 'PASS: all database security/workflow, role assignment and flexible order checks.';
+-- 2026-10-21 currency per trip, storefront theme, team management.
+set role authenticated;set request.jwt.claim.sub='00000000-0000-0000-0000-000000000002';
+do $$declare d jsonb;o jsonb;begin d:=public.jastip_load_workspace();
+ perform public.jastip_commit(current_setting('test.flex')::uuid,(d->>'revision')::bigint,'[
+  {"kind":"trips","data":{"id":"sg","name":"Tokyo for Singapore","status":"Open for orders","currency":"JPY","baseCurrency":"SGD","rate":0.009,"budget":0,"actual":0,"units":1,"allocation":"none","start":"2026-11-01","end":"2026-11-05"}},
+  {"kind":"items","data":{"id":"sg-item","trip":"sg","baseCurrency":"SGD","name":"Kit Kat box","status":"Available","currency":"JPY","rate":0.009,"price":3000,"markup":20,"markupMode":"percent","selling":32,"cost":27,"allocation":0,"qty":5,"depositMode":"percent","depositValue":50}}
+ ]'::jsonb);
+ d:=public.jastip_load_workspace();
+ perform public.test_denied(format('select public.jastip_commit(%L,%s,%L::jsonb)',current_setting('test.flex'),d->>'revision','[{"kind":"items","data":{"id":"sg-bad","trip":"sg","baseCurrency":"IDR","name":"Wrong","status":"Available","currency":"JPY","rate":0.009,"price":3000,"markup":20,"markupMode":"percent","selling":32,"cost":27,"allocation":0,"qty":1}}]'),'selling currency');
+ perform public.test_denied(format('select public.jastip_commit(%L,%s,%L::jsonb)',current_setting('test.flex'),d->>'revision','[{"kind":"items","data":{"id":"sg-bad2","trip":"sg","name":"Wrong price","status":"Available","currency":"JPY","rate":0.009,"price":3000,"markup":20,"markupMode":"percent","selling":40,"cost":27,"allocation":0,"qty":1}}]'),'Selling price does not match');
+ select x into o from jsonb_array_elements(d->'trips') x where x->>'id'='sg';
+ perform public.test_denied(format('select public.jastip_commit(%L,%s,%L::jsonb)',current_setting('test.flex'),d->>'revision',jsonb_build_array(jsonb_build_object('kind','trips','data',o||'{"baseCurrency":"USD"}'))::text),'selling currency can');
+ perform public.jastip_commit(current_setting('test.flex')::uuid,(d->>'revision')::bigint,'[]'::jsonb,'{"name":"Flex shop","slug":"flex-shop","storefront":{"layout":"showcase","accent":"orange"}}'::jsonb);
+ d:=public.jastip_load_workspace();
+ perform public.test_assert(d->'shop'->'storefront'->>'layout'='showcase','Storefront layout is saved');
+ perform public.test_denied(format('select public.jastip_commit(%L,%s,%L::jsonb,%L::jsonb)',current_setting('test.flex'),d->>'revision','[]','{"name":"Flex shop","slug":"flex-shop","storefront":{"layout":"neon","accent":"orange"}}'),'storefront layout');
+end$$;
+reset role;set role anon;set request.jwt.claim.sub='';
+select public.test_assert(public.jastip_storefront('flex-shop')->'shop'->'storefront'->>'accent'='orange','Public storefront exposes its theme');
+select set_config('test.sgorder',public.jastip_place_order('flex-shop','{"name":"SG Buyer","phone":"6581234567","address":"Singapore 238859","qty":2,"itemId":"sg-item","consent":true}')::text,false);
+select public.test_assert(current_setting('test.sgorder')::jsonb->>'currency'='SGD','Orders carry the trip selling currency');
+select public.test_assert((current_setting('test.sgorder')::jsonb->>'total')::numeric=64 and (current_setting('test.sgorder')::jsonb->>'deposit')::numeric=32,'SGD totals and down payment keep currency precision');
+reset role;set role authenticated;set request.jwt.claim.sub='00000000-0000-0000-0000-000000000004';
+select public.jastip_admin_action(current_setting('test.flex')::uuid,'plan','{"plan":"Pro"}');
+set request.jwt.claim.sub='00000000-0000-0000-0000-000000000002';
+select set_config('test.flexinvite',public.jastip_invite_member(current_setting('test.flex')::uuid,'typo@exmaple.com','Helper')::text,false);
+select public.test_assert(public.jastip_update_invitation(current_setting('test.flex')::uuid,current_setting('test.flexinvite')::uuid,'fixed@example.com')::text=current_setting('test.flexinvite'),'Owner can fix a pending invitation email');
+select public.test_assert(exists(select 1 from jsonb_array_elements(public.jastip_load_workspace()->'members') m where m->>'email'='fixed@example.com'),'Edited invitation is listed');
+select public.jastip_remove_member(current_setting('test.flex')::uuid,current_setting('test.flexinvite')::uuid);
+select public.test_assert(not exists(select 1 from jsonb_array_elements(public.jastip_load_workspace()->'members') m where m->>'email'='fixed@example.com'),'Cancelled invitation disappears');
+select public.test_denied($q$select public.jastip_remove_member(current_setting('test.flex')::uuid,'00000000-0000-0000-0000-000000000002')$q$,'owner can');
+set request.jwt.claim.sub='00000000-0000-0000-0000-000000000001';
+select public.jastip_remove_member(current_setting('test.workspace')::uuid,'00000000-0000-0000-0000-000000000003');
+set request.jwt.claim.sub='00000000-0000-0000-0000-000000000003';
+select public.test_denied($q$select public.jastip_load_workspace(current_setting('test.workspace')::uuid)$q$,'access denied');
+reset role;
+select 'PASS: all database security/workflow, role assignment, flexible order, currency, storefront and team checks.';

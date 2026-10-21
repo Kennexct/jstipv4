@@ -69,6 +69,8 @@
   --teal-swatch: #287d79;
   --rose-swatch: #ad5274;
   --graphite-swatch: #62615d;
+  --emerald-swatch: #2f7d4f;
+  --orange-swatch: #b8560f;
   --product-bg: #e9e9e5;
   --product-paper: #f9f8ef;
   --product-label: #78694e;
@@ -151,6 +153,12 @@
 :root[data-accent='graphite'] {
   --accent: var(--graphite-swatch);
 }
+:root[data-accent='emerald'] {
+  --accent: var(--emerald-swatch);
+}
+:root[data-accent='orange'] {
+  --accent: var(--orange-swatch);
+}
 :root[data-theme='dark'][data-accent='blue'] {
   --accent: #81aee0;
 }
@@ -165,6 +173,12 @@
 }
 :root[data-theme='dark'][data-accent='graphite'] {
   --accent: #b5b2ab;
+}
+:root[data-theme='dark'][data-accent='emerald'] {
+  --accent: #7cc49a;
+}
+:root[data-theme='dark'][data-accent='orange'] {
+  --accent: #f0a36b;
 }
 :root[data-density='compact'] {
   --row-h: 34px;

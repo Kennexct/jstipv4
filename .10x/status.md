@@ -16,6 +16,10 @@
 - Email invites + status, unified save bar + unsaved-changes guard, top loading bar, walkthrough hidden when done. All suites pass locally.
 - Needs Supabase dashboard: custom SMTP, redirect URL `https://<domain>/**`, optional email template wording.
 
+## 2026-10-21 trip-currency-storefront-team (ADR-003, ADR-004)
+- Currency per trip, 3 storefront layouts + colours, member remove/edit invite, tinted dashboard + synced appearance. All suites pass locally.
+- Needs Supabase: run migration 202610210002 before deploying.
+
 ## Not verified
 Hosted Supabase (migration not yet applied), Vercel deploy, APK runtime.
 

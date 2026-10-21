@@ -216,3 +216,69 @@ test('page changes show the top loading bar and finished walkthroughs are hidden
   await page.locator('.workspace-switch').click();
   await expect(page.getByRole('dialog')).not.toContainText('Start the walkthrough');
 });
+test('storefront layouts and colours can be chosen, previewed and saved', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/#Settings');
+  await page.getByRole('button', { name: 'Storefront', exact: true }).click();
+  await page.getByRole('radio', { name: /Lookbook/ }).click();
+  await page.getByRole('radio', { name: 'orange storefront colour' }).click();
+  await expect(page.locator('.store-preview-frame .storefront')).toHaveClass(/store-lookbook/);
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Storefront settings saved.')).toBeVisible();
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const layout of ['Lookbook', 'Trip showcase', 'Marketplace']) {
+      await page.goto('/#Settings');
+      await page.getByRole('button', { name: 'Storefront', exact: true }).click();
+      await page.getByRole('radio', { name: new RegExp(layout) }).click();
+      const save = page.getByRole('button', { name: 'Save changes' });
+      if (await save.isVisible()) {
+        await save.click();
+        await expect(save).toHaveCount(0);
+      }
+      await page.goto('/#Storefront');
+      await expect(page.locator('.storefront').first()).toBeVisible();
+      await expect(page.locator('.store-product').first()).toBeVisible();
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth + 1,
+      );
+      expect(overflow, `${layout} at ${width}px`).toBe(false);
+    }
+  }
+  expect(errors).toEqual([]);
+});
+test('a trip can sell in another currency and totals switch by currency', async ({ page }) => {
+  await page.goto('/#Trips');
+  await page.getByRole('button', { name: 'New trip', exact: true }).first().click();
+  await page.getByLabel('Trip name').fill('Tokyo for Singapore');
+  await page.getByLabel('Shopping destination').fill('Tokyo');
+  await page.getByLabel('Selling currency').selectOption('SGD');
+  await page.getByRole('button', { name: 'Create trip' }).click();
+  await expect(page.getByText('Sell in SGD')).toBeVisible();
+  await page.goto('/#Items');
+  await page.getByRole('button', { name: 'Add item', exact: true }).click();
+  await page
+    .getByRole('dialog')
+    .getByLabel('Trip', { exact: true })
+    .selectOption({ label: 'Tokyo for Singapore' });
+  await page.getByLabel('Item name').fill('Singapore Kit Kat');
+  await page.getByLabel('Purchase price', { exact: true }).fill('3000');
+  await expect(page.getByRole('dialog')).toContainText('S$');
+  await page.getByRole('button', { name: 'Post item' }).click();
+  const item = page.locator('.item-card').filter({ hasText: 'Singapore Kit Kat' });
+  await expect(item).toContainText('S$');
+  await page.goto('/#Overview');
+  await expect(page.getByLabel('Show totals in currency')).toBeVisible();
+  await page.getByLabel('Show totals in currency').selectOption('SGD');
+  await expect(page.locator('.stat-strip')).toContainText('S$');
+});
+test('dashboard accent colour and tinted style personalize the workspace', async ({ page }) => {
+  await page.goto('/#Settings');
+  await page.getByRole('button', { name: 'emerald accent' }).click();
+  await page.getByRole('radio', { name: 'Tinted' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-accent', 'emerald');
+  await expect(page.locator('html')).toHaveAttribute('data-tint', 'tinted');
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-tint', 'tinted');
+});
