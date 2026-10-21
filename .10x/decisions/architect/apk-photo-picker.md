@@ -1,0 +1,2 @@
+# Architect — apk-photo-picker (2026-10-21) · ADR-006
+`src/lib/photos.js`: `nativePhotos()`, `takeNativePhoto()` (@capacitor/camera getPhoto, source Prompt, DataUrl → Blob), `photoInputProps(onFiles, onError)` — one adapter used by every photo input in `src/dialogs.jsx` (product photos, request reference photo, payment proof, purchase receipt). Web keeps <input type=file> (no `capture`). Single sink: `compress()`.

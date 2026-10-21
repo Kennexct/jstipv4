@@ -45,10 +45,19 @@ import {
   PayBadge,
   navIcons,
 } from './ui';
+import { photoInputProps } from './lib/photos';
 async function compress(file) {
-  if (!file.type.startsWith('image/')) throw Error('Choose an image file, like JPG or PNG.');
+  // Files from the Android app can arrive with no or a generic MIME type; only reject known non-images.
+  const unknown = !file.type || file.type === 'application/octet-stream';
+  if (!unknown && !file.type.startsWith('image/'))
+    throw Error('Choose an image file, like JPG or PNG.');
   if (file.size > 15 * 1024 * 1024) throw Error('Choose a photo smaller than 15 MB.');
-  const image = await createImageBitmap(file);
+  let image;
+  try {
+    image = await createImageBitmap(file);
+  } catch {
+    throw Error('This photo couldn’t be read. Try a JPG or PNG.');
+  }
   const c = document.createElement('canvas');
   const r = Math.min(1, 1000 / image.width, 1000 / image.height);
   c.width = Math.round(image.width * r);
@@ -613,8 +622,7 @@ export function Dialog() {
   };
   dialogCloser.current = close;
   useEffect(() => () => (dialogCloser.current = null), []);
-  const uploads = async (e) => {
-    const files = [...e.target.files];
+  const uploads = async (files) => {
     if (files.length + photos.length > 6) {
       setError('Choose up to 6 photos per item.');
       return;
@@ -630,12 +638,11 @@ export function Dialog() {
       setBusy(false);
     }
   };
-  const receipt = async (e) => {
-    const file = e.target.files[0];
+  const receipt = async ([file]) => {
     if (!file) return;
     setBusy(true);
     try {
-      setProof({ name: file.name, preview: await compress(file) });
+      setProof({ name: file.name || 'Photo.jpg', preview: await compress(file) });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -1336,10 +1343,9 @@ export function Dialog() {
                       <input
                         type="file"
                         accept="image/*"
-                        capture="environment"
                         multiple
                         aria-label="Product photos"
-                        onChange={uploads}
+                        {...photoInputProps(uploads, setError)}
                       />
                       {photos.length ? (
                         <img src={photos[0]} alt="Uploaded product" />
@@ -1634,7 +1640,7 @@ export function Dialog() {
                   />
                 </Field>
                 <Field label="Reference photo (optional)">
-                  <input type="file" accept="image/*" onChange={uploads} />
+                  <input type="file" accept="image/*" {...photoInputProps(uploads, setError)} />
                 </Field>
                 {tripSelect}
                 <div className="form-grid">
@@ -1701,7 +1707,7 @@ export function Dialog() {
                   </select>
                 </Field>
                 <Field label="Payment proof (optional)">
-                  <input type="file" accept="image/*" onChange={receipt} />
+                  <input type="file" accept="image/*" {...photoInputProps(receipt, setError)} />
                 </Field>
                 {order.deposit > 0 && order.paid < order.deposit && (
                   <Callout icon="Info">
@@ -1934,7 +1940,7 @@ export function Dialog() {
                   </Button>
                 )}
                 <Field label="Receipt (optional)">
-                  <input type="file" accept="image/*" onChange={receipt} />
+                  <input type="file" accept="image/*" {...photoInputProps(receipt, setError)} />
                 </Field>
               </>
             )}

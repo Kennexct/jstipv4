@@ -29,5 +29,11 @@ Review items still open: APK env secrets, public app URL for links in APK, per-r
 ## 2026-10-21 bawa-rebrand (ADR-005, Accepted — built)
 - Name chosen: **Bawa**. Brand kit v1.0 in `docs/brand/` + canvas "Bawa — Brand kit" (boards A, E–H).
 - Approved by Kenny 14:34 (all 5 proposals). Phases 4–6 done locally: unit, build, e2e 15/15, db, integration 3/3 PASS. No migration.
-- Pending hosted checks: Vercel favicon/OG, APK Actions run + device install.
+- Pending hosted checks: Vercel favicon/OG, APK Actions run (workflow fixed 15:10: ubuntu-24.04 + preinstalled SDK) + device install. Validate Bawa CI green on hosted GitHub (run 39566245948).
 - Gate before public announcement: PDKI trademark + domain check.
+
+## 2026-10-21 apk-supabase-config (small fix)
+- APK build now gets Supabase settings from GitHub Actions secrets (fails loudly if missing); auth email links use the public app URL. Needs Kenny: add 3 repo secrets, replace build-apk.yml, push.
+
+## 2026-10-21 apk-photo-picker (ADR-006)
+- APK photos use the native Take photo / Choose from gallery sheet (@capacitor/camera); web drops camera-only `capture`; files without a type accepted. Local: unit, build, e2e 16/16 PASS. Needs device QA after the next APK build.

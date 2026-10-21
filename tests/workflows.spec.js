@@ -315,3 +315,27 @@ test('Bawa brand shows in the app and the Forest accent follows light, dark and 
   await page.goto('/#Storefront');
   await expect(page.locator('.store-powered').getByRole('img', { name: 'Bawa' })).toBeVisible();
 });
+
+test('product photos show a preview, including files without a MIME type (Android app)', async ({
+  page,
+}) => {
+  // 1×1 red PNG
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  await page.goto('/#Items');
+  await page.getByRole('button', { name: 'Add item', exact: true }).click();
+  const input = page.getByLabel('Product photos');
+  await expect(input).not.toHaveAttribute('capture', /.*/);
+  await input.setInputFiles({ name: 'camera.png', mimeType: 'image/png', buffer: png });
+  await expect(page.getByRole('img', { name: 'Uploaded product' })).toBeVisible();
+  await input.setInputFiles({ name: 'content-uri', mimeType: '', buffer: png });
+  await expect(page.getByRole('button', { name: 'Remove photo 2' })).toBeVisible();
+  await input.setInputFiles({
+    name: 'notes.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('hi'),
+  });
+  await expect(page.getByRole('dialog')).toContainText('Choose an image file');
+});
