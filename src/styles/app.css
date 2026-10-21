@@ -1256,9 +1256,40 @@ td small {
   font-size: var(--fs-xs);
 }
 .trip-selector {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: var(--s-3);
   margin-bottom: var(--s-6);
+}
+.trip-selector > button.closed:not(.selected) {
+  background: var(--bg);
+  color: var(--text-3);
+}
+.trip-selector > button.closed strong {
+  color: var(--text-2);
+}
+.trip-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-bottom: var(--s-3);
+}
+.trip-filters .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+}
+.trip-filters .chip.active {
+  color: var(--accent);
+}
+.chip-count {
+  font-size: var(--fs-2xs);
+  color: var(--text-3);
+}
+.trip-filter-empty {
+  padding: var(--s-4) 0;
+  font-size: var(--fs-xs);
 }
 .trip-selector > button {
   flex: 1;
@@ -1288,7 +1319,7 @@ td small {
   font-size: var(--fs-xs);
 }
 .trip-selector .badge {
-  display: none;
+  margin-top: var(--s-2);
 }
 .trip-detail {
   margin-bottom: var(--s-6);

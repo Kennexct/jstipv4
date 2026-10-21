@@ -9,6 +9,9 @@
 - Lockfile regenerated → `npm ci` works again.
 - Local verification: unit 10/10, build OK, SQL suite PASS, e2e 8/8, integration PASS.
 
+## 2026-10-21 trip-status-view
+- Trip status badges + status filters on Trips (UI only). e2e 9/9.
+
 ## Not verified
 Hosted Supabase (migration not yet applied), Vercel deploy, APK runtime.
 

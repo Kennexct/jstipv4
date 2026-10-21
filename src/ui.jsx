@@ -170,7 +170,7 @@ export function Button({ children, icon, primary, className = '', ...props }) {
   );
 }
 export function Badge({ status }) {
-  const tone = /Paid|Delivered|Available|Active|Closed/.test(status)
+  const tone = /Paid|Delivered|Available|Active/.test(status)
     ? 'green'
     : /Cancelled|Suspended|Past due/.test(status)
       ? 'red'
@@ -178,7 +178,7 @@ export function Badge({ status }) {
         ? 'amber'
         : /Confirmed|Purchased|Open for orders|Delivering/.test(status)
           ? 'blue'
-          : /Shipped|Pre-order/.test(status)
+          : /Shipped|Pre-order|Planning/.test(status)
             ? 'violet'
             : 'gray';
   return (

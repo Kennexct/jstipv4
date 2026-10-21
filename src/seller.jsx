@@ -568,7 +568,8 @@ export function Trips() {
     role,
     support,
   } = useOps();
-  const [id, setId] = useState(() => sessionStorage.getItem('jo-trip') || trips[0]?.id || '');
+  const [id, setId] = useState(() => sessionStorage.getItem('jo-trip') || trips[0]?.id || ''),
+    [view, setView] = useState('All');
   if (!trips.length)
     return (
       <>
@@ -583,7 +584,22 @@ export function Trips() {
         />
       </>
     );
-  const t = trips.find((t) => t.id === id) || trips[0],
+  // Active trips first (in workflow order), closed trips last.
+  const order = ['Shopping', 'Open for orders', 'Delivering', 'Planning', 'Closed'],
+    sorted = [...trips].sort(
+      (a, b) =>
+        order.indexOf(a.status) - order.indexOf(b.status) ||
+        String(b.start || '').localeCompare(String(a.start || '')),
+    ),
+    filters = [
+      ['All', () => true],
+      ['Active', (tr) => tr.status !== 'Closed'],
+      ['Planning', (tr) => tr.status === 'Planning'],
+      ['Open for orders', (tr) => tr.status === 'Open for orders'],
+      ['Closed', (tr) => tr.status === 'Closed'],
+    ],
+    visible = sorted.filter(filters.find(([name]) => name === view)[1]);
+  const t = trips.find((t) => t.id === id) || visible[0] || sorted[0],
     lines = budgets.filter((b) => b.trip === t.id),
     os = orders.filter((o) => o.trip === t.id && o.status !== 'Cancelled'),
     revenue = os.reduce((a, o) => a + o.total, 0),
@@ -596,24 +612,47 @@ export function Trips() {
           New trip
         </Button>
       </Header>
+      <div className="trip-filters" role="group" aria-label="Filter trips by status">
+        {filters.map(([name, test]) => (
+          <button
+            key={name}
+            className={`chip ${view === name ? 'active' : ''}`}
+            aria-pressed={view === name}
+            onClick={() => {
+              setView(name);
+              const first = sorted.find(test);
+              if (first && !test(t)) {
+                setId(first.id);
+                sessionStorage.setItem('jo-trip', first.id);
+              }
+            }}
+          >
+            {name} <span className="chip-count">{trips.filter(test).length}</span>
+          </button>
+        ))}
+      </div>
       <div className="trip-selector">
-        {trips.map((tr) => (
+        {visible.map((tr) => (
           <button
             key={tr.id}
-            className={t.id === tr.id ? 'selected' : ''}
+            className={`${t.id === tr.id ? 'selected' : ''} ${tr.status === 'Closed' ? 'closed' : ''}`}
+            aria-pressed={t.id === tr.id}
             onClick={() => {
               setId(tr.id);
               sessionStorage.setItem('jo-trip', tr.id);
             }}
           >
-            <I name="Plane" />
+            <I name={tr.status === 'Closed' ? 'LockKeyhole' : 'Plane'} />
             <div>
               <strong>{tr.name}</strong>
               <small>{tr.dates}</small>
+              <Badge status={tr.status} />
             </div>
-            <Badge status={tr.status} />
           </button>
         ))}
+        {!visible.length && (
+          <p className="muted trip-filter-empty">No {view.toLowerCase()} trips yet.</p>
+        )}
       </div>
       <section className="panel trip-detail">
         <div className="panel-head">

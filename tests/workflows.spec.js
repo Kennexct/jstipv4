@@ -159,3 +159,17 @@ test('items without a quantity limit and with a down payment reach the storefron
   await card.click();
   await expect(page.getByRole('dialog')).toContainText('up to 20 per order');
 });
+test('trips show their status and can be filtered by open, planning or closed', async ({
+  page,
+}) => {
+  await page.goto('/#Trips');
+  const cards = page.locator('.trip-selector > button');
+  await expect(cards.filter({ hasText: 'Tokyo autumn trip' })).toContainText('Open for orders');
+  await expect(cards.filter({ hasText: 'Seoul beauty run' })).toContainText('Planning');
+  await page.getByRole('button', { name: /^Closed/ }).click();
+  await expect(cards.filter({ hasText: 'Tokyo autumn trip' })).toHaveCount(0);
+  await expect(cards.first()).toContainText('Closed');
+  await expect(page.getByLabel('Trip status')).toHaveValue('Closed');
+  await page.getByRole('button', { name: /^Active/ }).click();
+  await expect(cards.filter({ hasText: 'Closed' })).toHaveCount(0);
+});
