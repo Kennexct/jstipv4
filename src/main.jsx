@@ -21,6 +21,8 @@ import {
   TopProgress,
   ConfirmDialog,
   navIcons,
+  BrandMark,
+  BrandWordmark,
 } from './ui';
 import { planDetails } from './data';
 import './styles/tokens.css';
@@ -109,12 +111,8 @@ function App() {
           {mobile && <div className="sidebar-scrim" onClick={() => setMobile(false)} />}
           <aside className={`sidebar ${mobile ? 'open' : ''}`}>
             <button className="brand" onClick={() => navigate('Overview')}>
-              <span className="brand-symbol">
-                <I name="ShoppingBag" size={19} />
-              </span>
-              <strong>
-                jastip<span>ops</span>
-              </strong>
+              <BrandMark tone="tile" size={29} className="brand-symbol" label="" />
+              <BrandWordmark height={17} />
               <small>workspace</small>
             </button>
             <button className="workspace-switch" onClick={() => setDialog({ type: 'workspace' })}>

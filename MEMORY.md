@@ -4,7 +4,7 @@
 ---
 
 ## 1. Project Overview & Identity
-- **Project**: Jastip Ops (`jastip-ops`)
+- **Project**: Bawa, formerly Jastip Ops (`jastip-ops`). Renamed 2026-10-21 (ADR-005, surface-only: `jastip` schema/RPCs/appId keep the old name). Brand kit: `docs/brand/README.md`.
 - **Domain**: Jasa Titip (proxy shopping / personal shopper) operations platform serving sellers (merchants), buyers (account-free storefront), team members (collaborators), and platform administrators.
 - **Tech Stack**:
   - **Frontend**: React 19 (`^19.1.0`), Vite 6 (`^6.4.4`), `@fontsource/geist`, `@fontsource/geist-mono`, `lucide-react`

@@ -19,7 +19,7 @@ export const emptyWorkspace = () => ({
   plan: 'Starter',
   preferences: {
     theme: 'light',
-    accent: 'indigo',
+    accent: 'forest',
     density: 'comfortable',
     motion: 'full',
     tint: 'subtle',

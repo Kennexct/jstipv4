@@ -477,6 +477,6 @@ export const seed = {
     slug: 'rina-trips',
     bio: 'Thoughtful finds from Japan & Korea, brought home with care.',
   },
-  preferences: { theme: 'light', accent: 'indigo', density: 'comfortable', motion: 'full' },
+  preferences: { theme: 'light', accent: 'forest', density: 'comfortable', motion: 'full' },
   plan: 'Pro',
 };

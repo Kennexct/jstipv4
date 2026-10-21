@@ -1,0 +1,35 @@
+/*
+ * Bawa brand tokens (v1.0, 2026-10-21).
+ * Additive to src/styles/tokens.css. Append, do not replace existing tokens.
+ * Brand colours are for platform surfaces (logo, auth, splash, icons, emails).
+ * App UI keeps using --accent, so merchants' chosen accent still wins.
+ */
+:root {
+  /* Core palette */
+  --brand-forest: #12352b; /* primary brand surface; text on light 13.4:1 */
+  --brand-pine: #1f6b4f; /* brand green for light UI; white text 6.4:1 */
+  --brand-lime: #c6f26b; /* highlight; only on forest/night/dark (10.4:1 on forest) */
+  --brand-fog: #e8ece6; /* light brand surface */
+  --brand-paper: #f1f4ec; /* text and mark on forest (12.0:1) */
+  --brand-night: #0b0c0b; /* darkest surface */
+  --brand-mist: #9fb7a9; /* secondary text on forest (7.2:1 on #0e2a22) */
+  --brand-forest-deep: #0e2a22; /* panels on forest */
+
+  /* Display type: marketing, splash and empty-state headlines only. UI stays Geist. */
+  --font-display: 'Space Grotesk', var(--font);
+
+  /* New dashboard accent (default for new accounts) */
+  --forest-swatch: #1f6b4f;
+}
+
+:root[data-accent='forest'] {
+  --accent: var(--forest-swatch);
+}
+:root[data-theme='dark'][data-accent='forest'] {
+  --accent: var(--brand-lime); /* button text uses var(--surface): 13.1:1 */
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='system'][data-accent='forest'] {
+    --accent: var(--brand-lime);
+  }
+}

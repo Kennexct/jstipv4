@@ -25,3 +25,9 @@ Hosted Supabase (migration not yet applied), Vercel deploy, APK runtime.
 
 ## Next
 Review items still open: APK env secrets, public app URL for links in APK, per-record locking, docs drift (README/setup).
+
+## 2026-10-21 bawa-rebrand (ADR-005, Accepted — built)
+- Name chosen: **Bawa**. Brand kit v1.0 in `docs/brand/` + canvas "Bawa — Brand kit" (boards A, E–H).
+- Approved by Kenny 14:34 (all 5 proposals). Phases 4–6 done locally: unit, build, e2e 15/15, db, integration 3/3 PASS. No migration.
+- Pending hosted checks: Vercel favicon/OG, APK Actions run + device install.
+- Gate before public announcement: PDKI trademark + domain check.

@@ -35,10 +35,18 @@ jobs:
       - name: Build Web Application (Vite)
         run: npm run build
 
-      - name: Initialize & Sync Capacitor Android
-        run: |
-          npx cap add android || true
-          npx cap sync android
+      - name: Initialize Capacitor Android
+        run: npx cap add android || true
+
+      # Bawa icon + splash from assets/ (sources in docs/brand, ADR-005). Runs before sync.
+      - name: Generate Bawa icon and splash
+        run: >
+          npx --yes @capacitor/assets@3.0.5 generate --android
+          --iconBackgroundColor '#12352B' --iconBackgroundColorDark '#12352B'
+          --splashBackgroundColor '#12352B' --splashBackgroundColorDark '#0B0C0B'
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
 
       - name: Make Gradle Executable
         run: chmod +x android/gradlew
@@ -50,11 +58,11 @@ jobs:
       - name: Rename APK for Easy Identification
         run: |
           mkdir -p build-output
-          cp android/app/build/outputs/apk/debug/app-debug.apk build-output/jastip-ops-debug.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk build-output/bawa-debug.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: jastip-ops-android-apk
-          path: build-output/jastip-ops-debug.apk
+          name: bawa-android-apk
+          path: build-output/bawa-debug.apk
           retention-days: 30

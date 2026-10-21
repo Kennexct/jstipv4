@@ -3,3 +3,4 @@
 [DISCOVERED] Build-vs-buy: Supabase as BaaS; no payment gateway or messaging provider (manual billing, copy-to-send).
 [DISCOVERED] Deployment: cloud-first; owner never runs locally.
 Open: Android APK vs PRD non-goal (native apps).
+- bawa-rebrand (2026-10-21): see bawa-rebrand.md — ADR-005 surface-only rename to Bawa

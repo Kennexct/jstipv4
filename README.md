@@ -1,4 +1,6 @@
-# Jastip Ops
+# Bawa (formerly Jastip Ops)
+
+> Product name: **Bawa** (renamed 2026-10-21, ADR-005). Internal identifiers — the `jastip` database schema, `jastip_*` RPCs and the Android appId `com.jastipops.app` — keep the old name on purpose. Brand kit and logo rules: `docs/brand/README.md`.
 
 A React/Vite operations app for sellers, account-free buyers and platform administrators, using Supabase Auth, PostgreSQL RPCs and Storage. It follows the supplied Jastip Ops PRD and Claude Design Taste guide. Connected mode starts with empty business data; demo mode is explicitly opt-in.
 

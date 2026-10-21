@@ -249,23 +249,11 @@ kbd {
   padding: 0 var(--s-3);
 }
 .brand-symbol {
-  width: 29px;
-  height: 29px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--border-strong);
+  flex-shrink: 0;
   border-radius: var(--r);
-  background: var(--surface);
 }
-.brand strong {
-  font-size: var(--fs-lg);
-  font-weight: 600;
-  letter-spacing: -0.7px;
-}
-.brand strong span {
-  font-weight: 400;
-  color: var(--text-3);
-  margin-left: 3px;
+.brand .brand-wordmark {
+  margin-left: 2px;
 }
 .brand small {
   margin-left: auto;
@@ -1603,6 +1591,9 @@ tfoot td {
   outline: 2px solid var(--border-strong);
   outline-offset: 3px;
 }
+.accent-options > [data-color='forest'] {
+  background: var(--forest-swatch);
+}
 .accent-options > [data-color='blue'] {
   background: var(--blue-swatch);
 }
@@ -2502,6 +2493,12 @@ tfoot td {
 }
 .store-footer > .text-btn {
   margin-left: auto;
+}
+.store-powered {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 .onboarding {
   max-width: 720px;
@@ -4649,11 +4646,6 @@ tfoot td {
   background: var(--accent-soft);
   color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent-line);
-}
-:root[data-tint='tinted'] .brand-symbol {
-  background: var(--accent);
-  color: var(--surface);
-  border-color: var(--accent);
 }
 :root[data-tint='tinted'] .topbar {
   box-shadow: inset 0 -2px 0 var(--accent-line);

@@ -2,6 +2,7 @@ import { demoMode } from './lib/supabase';
 import { LiveRevenueChart } from './charts';
 import React, { useId, useEffect, useRef } from 'react';
 import { paymentState } from './money';
+import { BrandMark } from './brand';
 import {
   Circle,
   Trash2,
@@ -508,11 +509,12 @@ export function ProductArt({ item, type = item?.image || 'none', photo = 0 }) {
     </div>
   );
 }
-export function Loader({ label = 'Loading…' }) {
+export { BrandMark, BrandWordmark, BrandLockup } from './brand';
+export function Loader({ label = 'Loading…', brand = false }) {
   return (
     <div className="loader" role="status" aria-live="polite">
       <span className="loader-mark">
-        <I name="ShoppingBag" size={18} />
+        {brand ? <BrandMark size={22} label="" /> : <I name="ShoppingBag" size={18} />}
       </span>
       <span className="loader-ring" aria-hidden="true" />
       <span className="loader-label">{label}</span>

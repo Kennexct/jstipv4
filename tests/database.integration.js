@@ -56,7 +56,7 @@ test('clean workspace, trip/item capture, public order, payments, purchase, trac
   await page.getByLabel('Workspace name').fill('Actual shop');
   await page.getByLabel('Storefront URL name').fill('actual-shop');
   await page.getByRole('button', { name: 'Create workspace' }).click();
-  await expect(page.getByRole('heading', { name: 'Welcome to Jastip Ops' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome to Bawa' })).toBeVisible();
   await expect(page.locator('body')).not.toContainText('Fake Buyer');
   await page.goto('/#Trips');
   await expect(page.getByText('Plan your first trip')).toBeVisible();

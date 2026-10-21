@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from './lib/supabase';
 import { rpc } from './lib/supabase';
 import { useOps } from './store';
-import { Button, Field, I, Callout, Loader } from './ui';
+import { Button, Field, Callout, Loader, BrandLockup } from './ui';
 export function ConnectionGate() {
   const { connection, connectionError, reload, session, signOut, navigate } = useOps();
   const [view, setView] = useState(location.hash === '#SignUp' ? 'signup' : 'signin'),
@@ -68,8 +68,7 @@ export function ConnectionGate() {
     <main className="auth-shell">
       <section className="auth-card">
         <div className="auth-brand">
-          <I name="ShoppingBag" size={20} />
-          <strong>jastip ops</strong>
+          <BrandLockup height={26} />
         </div>
         <h1>
           {waiting
@@ -103,7 +102,7 @@ export function ConnectionGate() {
             </Button>
           </>
         ) : waiting ? (
-          <Loader label="Getting your workspace ready…" />
+          <Loader brand label="Getting your workspace ready…" />
         ) : setup ? (
           <pre>VITE_SUPABASE_URL=…{'\n'}VITE_SUPABASE_PUBLISHABLE_KEY=…</pre>
         ) : (

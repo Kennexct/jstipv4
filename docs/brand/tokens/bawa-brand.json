@@ -1,0 +1,35 @@
+{
+  "name": "bawa",
+  "version": "1.0.0",
+  "color": {
+    "forest": { "value": "#12352B", "use": "Primary brand surface: app icon, splash, auth panel, email header" },
+    "pine": { "value": "#1F6B4F", "use": "Brand green on light UI; the light-mode 'forest' accent" },
+    "lime": { "value": "#C6F26B", "use": "Destination dot and highlights. Only on forest, night or dark mode. Never on white (1.3:1)" },
+    "fog": { "value": "#E8ECE6", "use": "Light brand surface" },
+    "paper": { "value": "#F1F4EC", "use": "Mark and text on forest" },
+    "night": { "value": "#0B0C0B", "use": "Darkest surface, dark splash" },
+    "mist": { "value": "#9FB7A9", "use": "Secondary text on forest" },
+    "forestDeep": { "value": "#0E2A22", "use": "Panels on forest" }
+  },
+  "accent": {
+    "forest": { "light": "#1F6B4F", "dark": "#C6F26B" }
+  },
+  "contrast": {
+    "pine/white": 6.41,
+    "forest/white": 13.38,
+    "lime/forest": 10.39,
+    "paper/forest": 12.03,
+    "lime/darkSurface#1D1D1C": 13.11,
+    "lime/white": 1.29
+  },
+  "type": {
+    "display": { "family": "Space Grotesk", "weights": [600, 700], "tracking": "-0.035em", "use": "Wordmark (outlined), splash, marketing, onboarding headlines" },
+    "ui": { "family": "Geist", "weights": [400, 500, 600], "use": "All app UI (unchanged)" },
+    "mono": { "family": "Geist Mono", "weights": [400], "use": "Order codes, amounts in tables (unchanged)" }
+  },
+  "logo": {
+    "minHeight": { "lockupPx": 20, "markPx": 16 },
+    "clearSpace": "Height of the destination dot (0.19 × mark height) on all sides",
+    "tagline": { "en": "Found there. Brought home.", "id": "Ditemukan di sana. Dibawa pulang." }
+  }
+}

@@ -8,6 +8,18 @@ export const orderStatuses = [
   'Delivered',
   'Cancelled',
 ];
+// Dashboard accents; the first is the default (Forest = Bawa brand, ADR-005).
+export const accentOptions = [
+  'forest',
+  'indigo',
+  'blue',
+  'violet',
+  'teal',
+  'emerald',
+  'orange',
+  'rose',
+  'graphite',
+];
 export const tripStatuses = ['Planning', 'Open for orders', 'Shopping', 'Delivering', 'Closed'];
 export const planDetails = [
   {

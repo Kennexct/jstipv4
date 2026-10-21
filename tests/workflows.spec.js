@@ -282,3 +282,36 @@ test('dashboard accent colour and tinted style personalize the workspace', async
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-tint', 'tinted');
 });
+
+test('Bawa brand shows in the app and the Forest accent follows light, dark and system themes', async ({
+  page,
+}) => {
+  await page.goto('/#Overview');
+  await expect(page).toHaveTitle(/^Bawa · /);
+  await expect(page.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute(
+    'href',
+    /favicon\.svg$/,
+  );
+  await expect(page.locator('.sidebar .brand').getByRole('img', { name: 'Bawa' })).toBeVisible();
+  await expect(page.locator('body')).not.toContainText(/jastip ops/i);
+  const accent = () =>
+    page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
+    );
+  await page.goto('/#Settings');
+  await page.getByRole('button', { name: 'Light', exact: true }).click();
+  await page.getByRole('button', { name: 'forest accent' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-accent', 'forest');
+  expect(await accent()).toMatch(/#1f6b4f/i);
+  await page.getByRole('button', { name: 'Dark', exact: true }).click();
+  expect(await accent()).toMatch(/#c6f26b/i);
+  // System theme in a dark OS uses the dark accent value (was a bug before ADR-005).
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.getByRole('button', { name: 'System', exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'system');
+  expect(await accent()).toMatch(/#c6f26b/i);
+  await page.getByRole('button', { name: 'blue accent' }).click();
+  expect(await accent()).toMatch(/#81aee0/i);
+  await page.goto('/#Storefront');
+  await expect(page.locator('.store-powered').getByRole('img', { name: 'Bawa' })).toBeVisible();
+});

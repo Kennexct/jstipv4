@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useOps, useUnsavedChanges } from './store';
 import { money, isUnlimited, stockLabel, depositLabel, currencyOf, currencyNames } from './money';
-import { planDetails } from './data';
+import { planDetails, accentOptions } from './data';
 import { LiveBilling, LiveAdminSummary } from './live-workspaces';
 import { rpc } from './lib/supabase';
 import { sendInviteEmail, inviteLink } from './lib/repository';
@@ -24,6 +24,7 @@ import {
   RevenueChart,
   ProductArt,
   SaveBar,
+  BrandLockup,
 } from './ui';
 export function Billing() {
   const { data, exportCsv, setDialog, demoMode } = useOps();
@@ -363,19 +364,17 @@ export function Settings() {
               <p>One accent, used with purpose.</p>
             </div>
             <div className="accent-options">
-              {['indigo', 'blue', 'violet', 'teal', 'emerald', 'orange', 'rose', 'graphite'].map(
-                (c) => (
-                  <button
-                    key={c}
-                    data-color={c}
-                    className={p.accent === c ? 'selected' : ''}
-                    aria-label={c + ' accent'}
-                    onClick={() => preference('accent', c)}
-                  >
-                    {p.accent === c && <I name="Check" size={14} />}
-                  </button>
-                ),
-              )}
+              {accentOptions.map((c) => (
+                <button
+                  key={c}
+                  data-color={c}
+                  className={p.accent === c ? 'selected' : ''}
+                  aria-label={c + ' accent'}
+                  onClick={() => preference('accent', c)}
+                >
+                  {p.accent === c && <I name="Check" size={14} />}
+                </button>
+              ))}
             </div>
           </div>
           <div className="settings-row">
@@ -828,7 +827,7 @@ export function Welcome() {
   return (
     <>
       <Header
-        title="Welcome to Jastip Ops"
+        title="Welcome to Bawa"
         description="From first find to first order, in a few small steps."
       />
       <section className="panel onboarding">
@@ -1190,8 +1189,8 @@ export function Storefront({ theme: override, embedded = false }) {
         <button className="text-btn" onClick={() => open({ type: 'report' })}>
           Report storefront
         </button>
-        <span>
-          Powered by <strong>jastip ops</strong>
+        <span className="store-powered">
+          Powered by <BrandLockup tone="current" height={13} />
         </span>
       </footer>
     </>
