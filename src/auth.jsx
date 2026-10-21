@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from './lib/supabase';
 import { rpc } from './lib/supabase';
 import { useOps } from './store';
+import { appBase } from './lib/repository';
 import { Button, Field, Callout, Loader, BrandLockup } from './ui';
 export function ConnectionGate() {
   const { connection, connectionError, reload, session, signOut, navigate } = useOps();
@@ -25,7 +26,7 @@ export function ConnectionGate() {
         const { data: authData, error } = await supabase.auth.signUp({
           email: f.email,
           password: f.password,
-          options: { data: { name: f.name }, emailRedirectTo: location.origin + location.pathname },
+          options: { data: { name: f.name }, emailRedirectTo: appBase() },
         });
         if (error) throw error;
         if (authData?.session) {
@@ -35,7 +36,7 @@ export function ConnectionGate() {
         }
       } else if (view === 'reset') {
         const { error } = await supabase.auth.resetPasswordForEmail(f.email, {
-          redirectTo: location.origin + location.pathname + '#Recovery',
+          redirectTo: appBase() + '#Recovery',
         });
         if (error) throw error;
         setMessage('If this email has an account, a password reset link is on its way.');
