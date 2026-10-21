@@ -1,8 +1,15 @@
-import React, { useState } from 'react';
-import { useOps } from './store';
+import React, { useEffect, useRef, useState } from 'react';
+import { useOps, useUnsavedChanges } from './store';
 import { orderStatuses, planDetails } from './data';
-import { recordId, today } from './lib/records';
-import { placePublicOrder, trackPublicOrder, inviteMember, proofUrl } from './lib/repository';
+import { recordId, today, walkthroughDone } from './lib/records';
+import {
+  placePublicOrder,
+  trackPublicOrder,
+  inviteMember,
+  sendInviteEmail,
+  proofUrl,
+} from './lib/repository';
+import { supabase } from './lib/supabase';
 import { rpc } from './lib/supabase';
 import { ManualInvoice } from './live-workspaces';
 import {
@@ -440,6 +447,8 @@ export function Dialog() {
     pending,
     reload,
     selectWorkspace,
+    setConfirm,
+    dialogCloser,
   } = useOps();
   const [step, setStep] = useState(original.type),
     [error, setError] = useState(''),
@@ -497,8 +506,20 @@ export function Dialog() {
     consent: false,
     code: '',
     memberRole: 'Helper',
+    password: '',
   });
   const set = (k, v) => setF((prev) => ({ ...prev, [k]: v }));
+  const initialForm = useRef(JSON.stringify(f)),
+    submitting = useRef(false),
+    editedRecord = useRef(
+      original.type === 'item' && original.item
+        ? { kind: 'items', record: original.item }
+        : ['quote', 'payment', 'purchase'].includes(original.type) && original.order
+          ? { kind: 'orders', record: original.order }
+          : original.type === 'budget' && original.budget
+            ? { kind: 'budgets', record: original.budget }
+            : null,
+    ).current;
   const t = data.trips.find((t) => t.id === f.trip) ||
       data.trips[0] || {
         id: '',
@@ -529,7 +550,44 @@ export function Dialog() {
       f.depositMode !== 'none' &&
       (!(Number(f.depositValue) > 0) ||
         (f.depositMode === 'percent' && Number(f.depositValue) > 100));
-  const close = () => setDialog(null);
+  // Unsaved input in a form dialog asks before closing (Cancel, ×, backdrop, Esc, navigation).
+  const formSteps = [
+    'item',
+    'quote',
+    'manual-order',
+    'order',
+    'payment',
+    'purchase',
+    'trip',
+    'budget',
+    'request',
+    'buyer-request',
+    'customer',
+    'invite',
+    'invite-merchant',
+    'suspend',
+    'refund',
+    'report',
+    'set-password',
+  ];
+  const dirty =
+    formSteps.includes(step) &&
+    (JSON.stringify(f) !== initialForm.current ||
+      photos.length !== (initial?.photos || []).length ||
+      !!proof);
+  useUnsavedChanges('dialog', dirty && !busy);
+  const close = () => {
+    if (!submitting.current && dirty)
+      setConfirm({
+        proceed: () => {
+          setConfirm(null);
+          setDialog(null);
+        },
+      });
+    else setDialog(null);
+  };
+  dialogCloser.current = close;
+  useEffect(() => () => (dialogCloser.current = null), []);
   const uploads = async (e) => {
     const files = [...e.target.files];
     if (files.length + photos.length > 6) {
@@ -579,6 +637,7 @@ export function Dialog() {
     customer: 'Add customer',
     invite: 'Invite a team member',
     'invite-merchant': 'Invite merchant',
+    'set-password': 'Set your password',
     suspend: 'Suspend merchant',
     refund: 'Add refund note',
     report: 'Report this storefront',
@@ -677,11 +736,15 @@ export function Dialog() {
     e.preventDefault();
     setError('');
     setBusy(true);
+    submitting.current = true;
     try {
-      if (!demoMode && original.baseRevision != null && original.baseRevision !== data.revision) {
-        throw Error(
-          'This workspace changed while the form was open. Reopen the form to use the latest values.',
-        );
+      // Only block when the record being edited was changed by someone else meanwhile.
+      if (!demoMode && editedRecord) {
+        const current = data[editedRecord.kind].find((r) => r.id === editedRecord.record.id);
+        if (current && JSON.stringify(current) !== JSON.stringify(editedRecord.record))
+          throw Error(
+            'Someone else just changed this record. Close the form and open it again to see the latest values.',
+          );
       }
       if (support && !['order', 'buyer-request', 'report', 'track'].includes(step)) {
         setError('This support session is read-only. Exit support view to edit.');
@@ -905,10 +968,32 @@ export function Dialog() {
         );
         close();
       } else if (step === 'invite' && !demoMode) {
-        const link = await inviteMember(data.workspaceId, f.phone, f.memberRole);
-        await reload();
+        const email = f.phone.trim().toLowerCase();
+        const { id, link } = await inviteMember(data.workspaceId, email, f.memberRole);
+        let emailError = '';
+        try {
+          await sendInviteEmail(email, id);
+        } catch (error) {
+          emailError = error.message;
+        }
         close();
-        await copy(link, 'Invitation link');
+        await reload({ quiet: true });
+        try {
+          await navigator.clipboard.writeText(link);
+        } catch {}
+        announce(
+          emailError
+            ? `Invitation saved, but the email couldn’t be sent (${emailError}). The link is copied — send it to ${email} yourself.`
+            : `Invitation emailed to ${email}. The link is also copied in case they need it.`,
+        );
+      } else if (step === 'set-password') {
+        const { error } = await supabase.auth.updateUser({
+          password: f.password,
+          data: { password_set: true },
+        });
+        if (error) throw error;
+        close();
+        announce('Password saved. Next time you can sign in with your email and password.');
       } else if (step === 'invite') {
         await requireSaved(
           change(
@@ -995,6 +1080,7 @@ export function Dialog() {
       setError(e.message);
     } finally {
       setBusy(false);
+      submitting.current = false;
     }
   };
   const tripSelect = (
@@ -1898,6 +1984,7 @@ export function Dialog() {
                   ['Welcome', 'Start the walkthrough', 'Workspace → trip → first item', 'Compass'],
                 ]
                   .filter(([p]) => demoMode || p !== 'Merchants' || data.isAdmin)
+                  .filter(([p]) => p !== 'Welcome' || (role === 'Owner' && !walkthroughDone(data)))
                   .map(([p, title, desc, icon]) => (
                     <button
                       type="button"
@@ -1989,10 +2076,33 @@ export function Dialog() {
                     <option>Helper</option>
                   </select>
                 </Field>
+                <Callout icon="Mail">
+                  {demoMode
+                    ? 'In the live app we email a sign-in link to this address.'
+                    : 'We’ll email a secure sign-in link to this address. When they open it, their email is verified and they join this workspace automatically — new teammates then set a password. The link is also copied so you can share it on WhatsApp.'}
+                </Callout>
                 <p className="footnote">
-                  Helpers cannot see margins or reports. Share the invitation link with the invited
-                  email address.
+                  Managers can edit items, trips and orders. Helpers manage orders only and can’t
+                  see costs, margins or reports.
                 </p>
+              </>
+            )}
+            {step === 'set-password' && (
+              <>
+                <p>
+                  You joined with an email link. Add a password so you can also sign in with your
+                  email and password.
+                </p>
+                <Field label="New password" hint="Use at least 12 characters.">
+                  <input
+                    required
+                    type="password"
+                    minLength={12}
+                    autoComplete="new-password"
+                    value={f.password}
+                    onChange={(e) => set('password', e.target.value)}
+                  />
+                </Field>
               </>
             )}
             {step === 'invite-merchant' && (
@@ -2046,7 +2156,11 @@ export function Dialog() {
               step,
             ) && (
               <Button type="button" onClick={close}>
-                {step === 'product' ? 'Keep browsing' : 'Cancel'}
+                {step === 'product'
+                  ? 'Keep browsing'
+                  : step === 'set-password'
+                    ? 'Later'
+                    : 'Cancel'}
               </Button>
             )}
             <span className="spacer" />
@@ -2108,9 +2222,15 @@ export function Dialog() {
                                       ? 'Suspend merchant'
                                       : ['request', 'buyer-request'].includes(step)
                                         ? 'Send request'
-                                        : ['invite', 'invite-merchant'].includes(step)
-                                          ? 'Save invitation'
-                                          : 'Save'}
+                                        : step === 'invite'
+                                          ? demoMode
+                                            ? 'Save invitation'
+                                            : 'Send invitation'
+                                          : step === 'invite-merchant'
+                                            ? 'Save invitation'
+                                            : step === 'set-password'
+                                              ? 'Save password'
+                                              : 'Save'}
               </Button>
             )}
           </div>

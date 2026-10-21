@@ -67,13 +67,34 @@ export async function placePublicOrder(slug, order) {
 export async function trackPublicOrder(token) {
   return rpc('jastip_track_order', { p_token: token });
 }
+// Public address of the web app. Set VITE_PUBLIC_APP_URL (e.g. https://jastip.vercel.app/) so
+// links built inside the Android app point to the website instead of https://localhost.
+export const appBase = () => {
+  const configured = import.meta.env.VITE_PUBLIC_APP_URL;
+  return configured ? configured.replace(/\/?$/, '/') : location.origin + location.pathname;
+};
+export const inviteLink = (id) => `${appBase()}#invite/${id}`;
 export async function inviteMember(workspaceId, email, role) {
   const id = await rpc('jastip_invite_member', {
     p_workspace: workspaceId,
     p_email: email,
     p_role: role,
   });
-  return `${location.origin}${location.pathname}#invite/${id}`;
+  return { id, link: inviteLink(id) };
+}
+// Emails the invitee a Supabase sign-in link that brings them back with ?invite=<id>.
+// Creates their account if needed (email verified by the link itself).
+export async function sendInviteEmail(email, id) {
+  if (!supabase) throw Error('Supabase is not configured.');
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      shouldCreateUser: true,
+      emailRedirectTo: `${appBase()}?invite=${encodeURIComponent(id)}`,
+      data: { invited: true },
+    },
+  });
+  if (error) throw Error(error.message);
 }
 export async function adminAction(workspaceId, action, value) {
   return rpc('jastip_admin_action', { p_workspace: workspaceId, p_action: action, p_value: value });

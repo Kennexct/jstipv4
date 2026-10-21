@@ -1,10 +1,12 @@
 import { test, expect } from '@playwright/test';
-async function session(page, admin = false) {
+async function session(page, admin = false, helper = false) {
   await page.addInitScript(
-    ({ admin }) => {
-      const id = admin
-        ? '00000000-0000-0000-0000-000000000004'
-        : '00000000-0000-0000-0000-000000000001';
+    ({ admin, helper }) => {
+      const id = helper
+        ? '00000000-0000-0000-0000-000000000005'
+        : admin
+          ? '00000000-0000-0000-0000-000000000004'
+          : '00000000-0000-0000-0000-000000000001';
       const exp = Math.floor(Date.now() / 1000) + 3600;
       const jwt =
         btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' })) +
@@ -21,8 +23,14 @@ async function session(page, admin = false) {
           token_type: 'bearer',
           user: {
             id,
-            email: admin ? 'admin@example.com' : 'owner@example.com',
-            user_metadata: { name: admin ? 'Admin' : 'Owner' },
+            email: helper
+              ? 'helper@example.com'
+              : admin
+                ? 'admin@example.com'
+                : 'owner@example.com',
+            user_metadata: helper
+              ? { name: 'Helper', invited: true }
+              : { name: admin ? 'Admin' : 'Owner' },
           },
         }),
       );
@@ -31,7 +39,7 @@ async function session(page, admin = false) {
         JSON.stringify({ shop: { name: 'Old fake shop' }, orders: [{ name: 'Fake Buyer' }] }),
       );
     },
-    { admin },
+    { admin, helper },
   );
 }
 test('clean workspace, trip/item capture, public order, payments, purchase, tracking and manual invoice use PostgreSQL', async ({
@@ -181,4 +189,70 @@ test('clean workspace, trip/item capture, public order, payments, purchase, trac
   expect(errors).toEqual([]);
   await buyer.close();
   await admin.close();
+});
+test('owner invites a teammate by email; the link signs them in and they join', async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(90000);
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  // Starter allows one member; the platform admin upgrades this workspace to Pro first.
+  const jwt = (sub) =>
+    Buffer.from('{"alg":"HS256"}').toString('base64url') +
+    '.' +
+    Buffer.from(JSON.stringify({ sub, role: 'authenticated', exp: 9999999999 })).toString(
+      'base64url',
+    ) +
+    '.test';
+  const rpc = async (name, body, sub) => {
+    const res = await fetch('http://127.0.0.1:54329/rest/v1/rpc/' + name, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + jwt(sub) },
+      body: JSON.stringify(body),
+    });
+    expect(res.ok).toBe(true);
+    return res.json();
+  };
+  const owner = '00000000-0000-0000-0000-000000000001';
+  const workspace = (await rpc('jastip_load_workspace', {}, owner)).workspaceId;
+  await rpc(
+    'jastip_admin_action',
+    { p_workspace: workspace, p_action: 'plan', p_value: { plan: 'Pro' } },
+    '00000000-0000-0000-0000-000000000004',
+  );
+  await session(page);
+  await page.goto('/#Settings');
+  await page.getByRole('button', { name: 'Team & roles', exact: true }).click();
+  await page.getByRole('button', { name: 'Invite member' }).click();
+  await page.getByLabel('Email address').fill('helper@example.com');
+  await page.getByRole('button', { name: 'Send invitation' }).click();
+  await expect(page.getByText(/Invitation emailed to helper@example.com/)).toBeVisible();
+  await expect(page.getByText('Team & roles', { exact: true }).first()).toBeVisible();
+  await expect(
+    page.getByText('Invitation sent · waiting for them to open the email link'),
+  ).toBeVisible();
+  const emails = await (await fetch('http://127.0.0.1:54329/test/emails')).json();
+  const sent = emails.at(-1);
+  expect(sent.email).toBe('helper@example.com');
+  const invite = new URL(sent.redirect).searchParams.get('invite');
+  expect(invite).toMatch(/^[0-9a-f-]{36}$/);
+  await page.getByRole('button', { name: 'Resend email' }).click();
+  await expect(page.getByText('Invitation email sent again to helper@example.com.')).toBeVisible();
+  const helper = await browser.newPage();
+  helper.on('pageerror', (e) => errors.push(e.message));
+  await session(helper, false, true);
+  await helper.goto('http://127.0.0.1:3002/?invite=' + invite);
+  await expect(helper.getByText('You joined the workspace. Welcome to the team!')).toBeVisible();
+  await expect(helper.getByRole('dialog', { name: 'Set your password' })).toBeVisible();
+  await helper.getByLabel('New password').fill('correct horse battery');
+  await helper.getByRole('button', { name: 'Save password' }).click();
+  await expect(helper.getByText(/Password saved/)).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: 'Team & roles', exact: true }).click();
+  await expect(page.locator('.member-row').filter({ hasText: 'helper@example.com' })).toContainText(
+    'Active',
+  );
+  expect(errors).toEqual([]);
+  await helper.close();
 });

@@ -4,6 +4,14 @@ import { emptyWorkspace, recordId, csvCell } from './lib/records';
 import { loadWorkspace, loadStorefront, commitWorkspace, adminAction } from './lib/repository';
 const Context = createContext(null);
 export const useOps = () => useContext(Context);
+// Register a form's unsaved state so navigation, Esc and closing ask before discarding it.
+export function useUnsavedChanges(key, dirty) {
+  const { setGuard } = useContext(Context);
+  useEffect(() => {
+    setGuard(key, dirty);
+    return () => setGuard(key, false);
+  }, [key, dirty]);
+}
 const route = () => location.hash.slice(1).split('/')[0] || 'Overview';
 const read = (seed) => {
   if (!demoMode) return emptyWorkspace();
@@ -30,7 +38,9 @@ export function Provider({ children, initialSeed }) {
     ),
     [connectionError, setConnectionError] = useState(''),
     [pending, setPending] = useState(false),
-    [pageLoading, setPageLoading] = useState(false);
+    [pageLoading, setPageLoading] = useState(false),
+    [routeLoading, setRouteLoading] = useState(false),
+    [confirm, setConfirm] = useState(null);
   const dataRef = useRef(data),
     supportRef = useRef(support),
     busyRef = useRef(false),
@@ -38,7 +48,34 @@ export function Provider({ children, initialSeed }) {
     activeWorkspace = useRef(null),
     timer = useRef(),
     chord = useRef(0),
-    connectionRef = useRef(connection);
+    connectionRef = useRef(connection),
+    guards = useRef(new Map()),
+    dialogCloser = useRef(null),
+    routeTimer = useRef(),
+    pageRef = useRef(page),
+    hashSuppress = useRef(false);
+  pageRef.current = page;
+  // Unsaved-changes guard: forms register `dirty`; leaving asks before discarding.
+  const isDirty = () => [...guards.current.values()].some(Boolean);
+  const setGuard = (key, dirty) => {
+    if (dirty) guards.current.set(key, true);
+    else guards.current.delete(key);
+  };
+  const confirmDiscard = (proceed) => {
+    if (!isDirty()) return proceed();
+    setConfirm({
+      proceed: () => {
+        guards.current.clear();
+        setConfirm(null);
+        proceed();
+      },
+    });
+  };
+  const startRouteLoading = () => {
+    setRouteLoading(true);
+    clearTimeout(routeTimer.current);
+    routeTimer.current = setTimeout(() => setRouteLoading(false), 450);
+  };
   dataRef.current = data;
   connectionRef.current = connection;
   supportRef.current = support;
@@ -94,11 +131,26 @@ export function Provider({ children, initialSeed }) {
           setConnection('signedout');
           return;
         }
-        if (route() === 'invite') {
-          activeWorkspace.current = await rpc('jastip_accept_invitation', {
-            p_invitation: location.hash.split('/')[1],
-          });
-          location.hash = 'Overview';
+        let invitation = route() === 'invite' ? location.hash.split('/')[1] : null;
+        try {
+          invitation ||= sessionStorage.getItem('jo-invite');
+        } catch {}
+        if (invitation) {
+          try {
+            sessionStorage.removeItem('jo-invite');
+          } catch {}
+          try {
+            activeWorkspace.current = await rpc('jastip_accept_invitation', {
+              p_invitation: invitation,
+            });
+            announce('You joined the workspace. Welcome to the team!');
+            const meta = s.user?.user_metadata || {};
+            if (meta.invited && !meta.password_set)
+              setTimeout(() => setDialog({ type: 'set-password' }), 0);
+          } catch (e) {
+            announce(e.message);
+          }
+          history.replaceState(null, '', location.pathname + '#Overview');
           setPage('Overview');
         }
         result = await loadWorkspace(
@@ -133,7 +185,10 @@ export function Provider({ children, initialSeed }) {
       if (request === generation.current) setPageLoading(false);
     }
   }
-  async function signOut() {
+  function signOut() {
+    confirmDiscard(doSignOut);
+  }
+  async function doSignOut() {
     if (pending) {
       announce('Wait for the current save to finish.');
       return;
@@ -267,7 +322,9 @@ export function Provider({ children, initialSeed }) {
       setPending(false);
     }
   };
-  const navigate = (p) => {
+  const navigate = (p) => confirmDiscard(() => go(p));
+  const go = (p) => {
+    startRouteLoading();
     try {
       if (p === 'Storefront') sessionStorage.setItem('jo-store-preview', '1');
       else sessionStorage.removeItem('jo-store-preview');
@@ -326,6 +383,21 @@ export function Provider({ children, initialSeed }) {
   }, []);
   useEffect(() => {
     const hash = () => {
+      if (hashSuppress.current) {
+        hashSuppress.current = false;
+        return;
+      }
+      // Browser back/forward or a typed link while a form has unsaved changes.
+      if (isDirty() && route() !== pageRef.current) {
+        const target = location.hash;
+        hashSuppress.current = true;
+        location.hash = pageRef.current;
+        confirmDiscard(() => {
+          location.hash = target;
+        });
+        return;
+      }
+      startRouteLoading();
       setPage(route());
       setDrawer(null);
       setDialog(null);
@@ -365,7 +437,8 @@ export function Provider({ children, initialSeed }) {
   useEffect(() => {
     const key = (e) => {
       if (e.key === 'Escape') {
-        if (dialog) setDialog(null);
+        if (confirm) setConfirm(null);
+        else if (dialog) (dialogCloser.current || (() => setDialog(null)))();
         else if (palette) setPalette(false);
         else if (drawer) setDrawer(null);
         else setMobile(false);
@@ -399,7 +472,17 @@ export function Provider({ children, initialSeed }) {
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [dialog, palette, drawer]);
+  }, [dialog, palette, drawer, confirm]);
+  useEffect(() => {
+    // Closing or reloading the tab: browsers only allow their own generic warning here.
+    const leave = (e) => {
+      if (!isDirty()) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', leave);
+    return () => window.removeEventListener('beforeunload', leave);
+  }, []);
   const updateOrder = async (id, patch) => {
     const o = dataRef.current.orders.find((o) => o.id === id);
     if (!o) return false;
@@ -512,6 +595,12 @@ export function Provider({ children, initialSeed }) {
         connectionError,
         reload,
         pageLoading,
+        routeLoading,
+        confirm,
+        setConfirm,
+        setGuard,
+        confirmDiscard,
+        dialogCloser,
         session,
         signOut,
         pending,

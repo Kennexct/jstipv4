@@ -9,7 +9,19 @@ import { ConnectionGate } from './auth';
 import { Overview, Orders, Items, Requests, Trips, Purchasing, Reports, Customers } from './seller';
 import { Billing, Settings, Welcome, Storefront, Admin } from './workspaces';
 import { Dialog, DetailDrawer, CommandPalette } from './dialogs';
-import { I, Button, Avatar, Empty, Header, Skeleton, StoreLoading, Progress, navIcons } from './ui';
+import {
+  I,
+  Button,
+  Avatar,
+  Empty,
+  Header,
+  Skeleton,
+  StoreLoading,
+  Progress,
+  TopProgress,
+  ConfirmDialog,
+  navIcons,
+} from './ui';
 import { planDetails } from './data';
 import './styles/tokens.css';
 import './styles/app.css';
@@ -54,6 +66,9 @@ function App() {
     pending,
     reload,
     pageLoading,
+    routeLoading,
+    confirm,
+    setConfirm,
     exitSupport,
   } = useOps();
   const [notifications, setNotifications] = useState(false);
@@ -69,6 +84,8 @@ function App() {
   const Screen = screens[page] || (mode === 'admin' ? Admin : Overview);
   return (
     <>
+      <TopProgress active={routeLoading || pageLoading} />
+      {confirm && <ConfirmDialog onConfirm={confirm.proceed} onCancel={() => setConfirm(null)} />}
       <a
         className="skip-link"
         href="#main"
@@ -347,11 +364,8 @@ function App() {
                 </button>
               </div>
             )}
-            {pageLoading && (
-              <div className="route-progress" role="progressbar" aria-label="Loading page" />
-            )}
             <div id="main" tabIndex="-1" className="page" key={page + screenState}>
-              {screenState === 'loading' || pageLoading ? (
+              {screenState === 'loading' || (pageLoading && data.role === 'Buyer') ? (
                 <Skeleton />
               ) : screenState === 'error' ? (
                 <>

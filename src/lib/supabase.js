@@ -1,6 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 if (new URLSearchParams(location.hash.slice(1)).get('type') === 'recovery')
   sessionStorage.setItem('jastip-password-recovery', 'true');
+// Invitation emails return with ?invite=<id>; keep it until the session is ready.
+try {
+  const invite = new URLSearchParams(location.search).get('invite');
+  if (invite) sessionStorage.setItem('jo-invite', invite);
+} catch {}
 const url = import.meta.env.VITE_SUPABASE_URL;
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
 export const demoMode = import.meta.env.VITE_ENABLE_DEMO === 'true';

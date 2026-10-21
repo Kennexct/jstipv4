@@ -12,6 +12,10 @@
 ## 2026-10-21 trip-status-view
 - Trip status badges + status filters on Trips (UI only). e2e 9/9.
 
+## 2026-10-21 team-invites-and-save-pattern (ADR-002)
+- Email invites + status, unified save bar + unsaved-changes guard, top loading bar, walkthrough hidden when done. All suites pass locally.
+- Needs Supabase dashboard: custom SMTP, redirect URL `https://<domain>/**`, optional email template wording.
+
 ## Not verified
 Hosted Supabase (migration not yet applied), Vercel deploy, APK runtime.
 

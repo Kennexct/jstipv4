@@ -127,7 +127,7 @@ Raw business tables are strictly private (`revoke all on schema jastip from publ
    - `changesBetween(previous, next)` calculates delta.
    - Deletion of records is forbidden (`throw Error('Record removal is not supported. Archive or cancel the record instead.')`). Records are marked archived or cancelled.
 4. **Third-Party Messaging & Integration Boundaries**:
-   - No external WhatsApp API gateway or automated messaging. WhatsApp notifications and invite links are copied to the user's clipboard for manual transmission.
+   - No external WhatsApp API gateway or automated messaging. WhatsApp notifications are copied to the user's clipboard. Team invitations are emailed through Supabase Auth sign-in links (ADR-002); the link is also copied.
    - Subscription billing is handled via manual invoices and platform admin activation.
 5. **Post-Signup Onboarding & Walkthrough Flow**:
    - Following account creation and workspace initialization (`jastip_create_workspace`), the system automatically routes the user to the interactive Walkthrough (`#Welcome`).
@@ -144,6 +144,10 @@ Raw business tables are strictly private (`revoke all on schema jastip from publ
    - Item-linked orders cannot change `itemId`/`qty`; cancel and re-create instead (prevents stock drift).
    - Purchasing lists Confirmed + Paid + Purchased orders, with a "Recap by item" view and CSV export for the end-of-trip recap.
 7. **Navigation loading**: in-app navigation and Refresh use quiet reloads (`reload({ quiet: true })`) that show a top progress bar + skeleton; only the first load and auth changes use the full-screen connection gate.
+9. **Team invitations (2026-10-21, ADR-002)**: `jastip_invite_member` creates the invitation, then the app calls `supabase.auth.signInWithOtp` (publishable key, no service role) so Supabase Auth emails a sign-in link that returns to `<app>/?invite=<id>`. `src/lib/supabase.js` stores the id; `reload()` accepts it once a session exists, then new invitees (`user_metadata.invited`) get a "Set your password" dialog. The link is also copied. Team & roles shows pending invites with Resend email / Copy link. Requires custom SMTP + redirect URL `https://<domain>/**` in Supabase Auth. `VITE_PUBLIC_APP_URL` (optional) fixes links built inside the APK.
+10. **One save pattern + unsaved-changes guard**: editable pages keep a draft and show `SaveBar` (Discard / Save changes). Forms register `useUnsavedChanges(key, dirty)`; leaving (navigation, browser back, Esc, closing a dialog, sign out) opens `ConfirmDialog` over a blurred page; closing the tab triggers the browser warning. Only user-typed edits count; forms that are saving don't count. Appearance settings stay instant and device-local.
+11. **Loading bar**: `TopProgress` (3px accent bar at the top of the window) shows on every page change (min ~450 ms) and while quiet reloads run.
+12. **Walkthrough**: hidden from the workspace switcher and Overview once finished ("Finish walkthrough" sets `localStorage['jo-walkthrough-done:<workspaceId>']`) or once a trip and an item both exist; only Owners see it. The fake "Base currency" field was removed.
 8. **Storefront**: no workspace bar for customers; open trips are highlighted as cards and items are grouped by trip. Merchants previewing from the workspace get a small "Exit preview" button (`sessionStorage['jo-store-preview']`).
 
 ---

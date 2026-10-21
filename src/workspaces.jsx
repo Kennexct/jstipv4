@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { useOps } from './store';
+import React, { useEffect, useState } from 'react';
+import { useOps, useUnsavedChanges } from './store';
 import { money, isUnlimited, stockLabel, depositLabel } from './money';
 import { planDetails } from './data';
 import { LiveBilling, LiveAdminSummary } from './live-workspaces';
 import { rpc } from './lib/supabase';
+import { sendInviteEmail, inviteLink } from './lib/repository';
+import { markWalkthroughDone } from './lib/records';
 import {
   I,
   Button,
@@ -20,6 +22,7 @@ import {
   Callout,
   RevenueChart,
   ProductArt,
+  SaveBar,
 } from './ui';
 export function Billing() {
   const { data, exportCsv, setDialog, demoMode } = useOps();
@@ -174,19 +177,141 @@ export function Settings() {
     reload,
     announce,
     pending,
+    confirmDiscard,
+    copy,
   } = useOps();
-  const [tab, setTab] = useState('Appearance');
+  const tabs = ['Appearance', 'Workspace', 'Team & roles', 'Currency', 'Storefront'];
+  // Remember the open tab across saves, reloads and quiet refreshes.
+  const [tab, setTabState] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('jo-settings-tab');
+      return tabs.includes(saved) ? saved : 'Appearance';
+    } catch {
+      return 'Appearance';
+    }
+  });
+  const setTab = (next) =>
+    confirmDiscard(() => {
+      setTabState(next);
+      try {
+        sessionStorage.setItem('jo-settings-tab', next);
+      } catch {}
+    });
+  const shopDraft = () => ({
+    name: data.shop.name || '',
+    slug: data.shop.slug || '',
+    contact: data.shop.contact || '',
+    bio: data.shop.bio || '',
+  });
+  const ratesDraft = () =>
+    Object.fromEntries(data.trips.filter((t) => t.status !== 'Closed').map((t) => [t.id, t.rate]));
+  const rolesDraft = () => Object.fromEntries(data.members.map((m) => [m.id, m.role]));
+  const [shop, setShop] = useState(shopDraft),
+    [rates, setRates] = useState(ratesDraft),
+    [roles, setRoles] = useState(rolesDraft),
+    [saving, setSaving] = useState(false),
+    [shopError, setShopError] = useState(''),
+    [touched, setTouched] = useState({});
+  const edit = (section, setter) => (update) => {
+    setTouched((t) => ({ ...t, [section]: true }));
+    setter(update);
+  };
+  const editShop = edit('shop', setShop),
+    editRates = edit('rates', setRates),
+    editRoles = edit('roles', setRoles);
+  // Only edits the user actually made count as unsaved.
+  const shopDirty = !!touched.shop && JSON.stringify(shop) !== JSON.stringify(shopDraft()),
+    ratesDirty =
+      !!touched.rates &&
+      Object.entries(rates).some(
+        ([id, rate]) => Number(rate) !== data.trips.find((t) => t.id === id)?.rate,
+      ),
+    rolesDirty = !!touched.roles && data.members.some((m) => roles[m.id] && roles[m.id] !== m.role);
+  const dirty =
+    (['Workspace', 'Storefront'].includes(tab) && shopDirty) ||
+    (tab === 'Currency' && ratesDirty) ||
+    (tab === 'Team & roles' && rolesDirty);
+  useUnsavedChanges('settings', dirty);
+  const discard = () => {
+    setShop(shopDraft());
+    setRates(ratesDraft());
+    setRoles(rolesDraft());
+    setShopError('');
+    setTouched({});
+  };
+  const save = async () => {
+    setSaving(true);
+    try {
+      if (['Workspace', 'Storefront'].includes(tab)) {
+        if (!/^[a-z0-9][a-z0-9-]{2,59}$/.test(shop.slug)) {
+          setShopError('Storefront URL name: 3–60 lowercase letters, numbers or hyphens.');
+          return;
+        }
+        if (shop.contact && !/^[+0-9 ()-]{8,20}$/.test(shop.contact)) {
+          setShopError('WhatsApp contact: include the country code, 8–20 digits.');
+          return;
+        }
+        setShopError('');
+        if (await change((d) => ({ ...d, shop: { ...d.shop, ...shop } }), `${tab} settings saved.`))
+          setTouched((t) => ({ ...t, shop: false }));
+      } else if (tab === 'Currency') {
+        const bad = Object.values(rates).some((r) => !(Number(r) > 0));
+        if (bad) {
+          announce('Every exchange rate must be above zero.');
+          return;
+        }
+        if (
+          await change(
+            (d) => ({
+              ...d,
+              trips: d.trips.map((t) => (t.id in rates ? { ...t, rate: Number(rates[t.id]) } : t)),
+            }),
+            'Exchange rates saved.',
+          )
+        )
+          setTouched((t) => ({ ...t, rates: false }));
+      } else if (tab === 'Team & roles') {
+        for (const m of data.members.filter((m) => roles[m.id] && roles[m.id] !== m.role))
+          await rpc('jastip_set_member_role', {
+            p_workspace: data.workspaceId,
+            p_member: m.id,
+            p_role: roles[m.id],
+          });
+        setTouched((t) => ({ ...t, roles: false }));
+        await reload({ quiet: true });
+        announce('Team roles saved.');
+      }
+    } catch (error) {
+      announce('Changes were not saved: ' + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  // Keep drafts in sync with fresh data when nothing is being edited.
+  useEffect(() => {
+    if (!touched.shop) setShop(shopDraft());
+  }, [JSON.stringify(data.shop)]);
+  useEffect(() => {
+    if (!touched.rates) setRates(ratesDraft());
+  }, [JSON.stringify(data.trips.map((t) => [t.id, t.rate, t.status]))]);
+  useEffect(() => {
+    if (!touched.roles) setRoles(rolesDraft());
+  }, [JSON.stringify(data.members)]);
+  const resendInvite = async (m) => {
+    try {
+      await sendInviteEmail(m.email, m.id);
+      announce(`Invitation email sent again to ${m.email}.`);
+    } catch (error) {
+      announce(`Email couldn’t be sent (${error.message}). Copy the link instead.`);
+    }
+  };
   const p = data.preferences;
   const preference = (k, v) =>
     setData((d) => ({ ...d, preferences: { ...d.preferences, [k]: v } }));
   return (
     <>
       <Header title="Settings" description="Make this workspace feel like yours." />
-      <Tabs
-        options={['Appearance', 'Workspace', 'Team & roles', 'Currency', 'Storefront']}
-        value={tab}
-        onChange={setTab}
-      />
+      <Tabs options={tabs} value={tab} onChange={setTab} />
       {tab === 'Appearance' ? (
         <section className="panel settings-panel">
           <div className="settings-row">
@@ -279,45 +404,67 @@ export function Settings() {
       ) : tab === 'Team & roles' ? (
         <section className="panel">
           <div className="panel-head">
-            <h2>Workspace members</h2>
-            <Button icon="Plus" onClick={() => setDialog({ type: 'invite' })}>
+            <div>
+              <h2>Workspace members</h2>
+              <p className="muted">
+                Invitations are emailed as a secure sign-in link. Pending people join as soon as
+                they open it.
+              </p>
+            </div>
+            <Button
+              icon="Plus"
+              disabled={support || (!demoMode && role !== 'Owner')}
+              onClick={() => setDialog({ type: 'invite' })}
+            >
               Invite member
             </Button>
           </div>
-          {data.members.map((m, k) => (
-            <div className="member-row" key={k}>
-              <Avatar name={m.name || m.email} />
-              <div>
-                <strong>{m.name || m.email}</strong>
-                <small>{m.email}</small>
+          {data.members.map((m, k) => {
+            const invited = m.status === 'Invited';
+            return (
+              <div className="member-row" key={m.id || k}>
+                <Avatar name={m.name || m.email} />
+                <div>
+                  <strong>{m.name || m.email}</strong>
+                  <small>{m.email}</small>
+                  {invited && (
+                    <span className="invite-status">
+                      Invitation sent · waiting for them to open the email link
+                    </span>
+                  )}
+                </div>
+                <div className="member-actions">
+                  <Badge status={invited ? 'Invited' : m.role === 'Owner' ? 'Owner' : 'Active'} />
+                  {invited && !demoMode && role === 'Owner' && (
+                    <>
+                      <Button icon="Send" disabled={support} onClick={() => resendInvite(m)}>
+                        Resend email
+                      </Button>
+                      <Button
+                        icon="Link2"
+                        onClick={() => copy(inviteLink(m.id), 'Invitation link')}
+                      >
+                        Copy link
+                      </Button>
+                    </>
+                  )}
+                  {!demoMode && role === 'Owner' && m.role !== 'Owner' ? (
+                    <select
+                      aria-label={'Role for ' + (m.name || m.email)}
+                      value={roles[m.id] || m.role}
+                      disabled={saving || support}
+                      onChange={(e) => editRoles((r) => ({ ...r, [m.id]: e.target.value }))}
+                    >
+                      <option>Manager</option>
+                      <option>Helper</option>
+                    </select>
+                  ) : (
+                    m.role !== 'Owner' && <span className="muted">{m.role}</span>
+                  )}
+                </div>
               </div>
-              {!demoMode && role === 'Owner' && m.role !== 'Owner' ? (
-                <select
-                  aria-label={'Role for ' + (m.name || m.email)}
-                  value={m.role}
-                  disabled={pending || support}
-                  onChange={async (e) => {
-                    try {
-                      await rpc('jastip_set_member_role', {
-                        p_workspace: data.workspaceId,
-                        p_member: m.id,
-                        p_role: e.target.value,
-                      });
-                      await reload();
-                      announce('Team role updated.');
-                    } catch (error) {
-                      announce(error.message);
-                    }
-                  }}
-                >
-                  <option>Manager</option>
-                  <option>Helper</option>
-                </select>
-              ) : (
-                <Badge status={m.status || m.role} />
-              )}
-            </div>
-          ))}
+            );
+          })}
           <div className="settings-row padded">
             <div>
               <h3>{demoMode ? 'Preview a role' : 'Your role'}</h3>
@@ -357,55 +504,72 @@ export function Settings() {
                     step="0.001"
                     disabled={support}
                     aria-label={t.currency + ' exchange rate'}
-                    value={t.rate}
-                    onChange={(e) =>
-                      change((d) => ({
-                        ...d,
-                        trips: d.trips.map((tr) =>
-                          tr.id === t.id ? { ...tr, rate: Number(e.target.value) } : tr,
-                        ),
-                      }))
-                    }
+                    value={rates[t.id] ?? t.rate}
+                    onChange={(e) => editRates((r) => ({ ...r, [t.id]: e.target.value }))}
                   />
                 </div>
               </div>
             ))}
+          {!data.trips.some((t) => t.status !== 'Closed') && (
+            <Empty
+              title="No open trips"
+              text="Exchange rates belong to trips that aren’t closed."
+            />
+          )}
         </section>
       ) : (
         <form
-          key={tab}
           className="panel settings-form"
           onSubmit={(e) => {
             e.preventDefault();
-            const fields = Object.fromEntries(new FormData(e.target));
-            change((d) => ({ ...d, shop: { ...d.shop, ...fields } }), `${tab} settings saved.`);
+            save();
           }}
         >
+          {shopError && (
+            <div className="form-error" role="alert">
+              <I name="CircleAlert" size={14} />
+              {shopError}
+            </div>
+          )}
           <Field label={tab === 'Storefront' ? 'Storefront name' : 'Workspace name'}>
-            <input name="name" required defaultValue={data.shop.name} />
+            <input
+              required
+              value={shop.name}
+              disabled={support}
+              onChange={(e) => editShop((d) => ({ ...d, name: e.target.value }))}
+            />
           </Field>
-          <Field label="Storefront slug">
-            <input name="slug" required pattern="[a-z0-9-]+" defaultValue={data.shop.slug} />
+          <Field label="Storefront slug" hint="Changing it changes your shared storefront link.">
+            <input
+              required
+              pattern="[a-z0-9][a-z0-9-]{2,59}"
+              value={shop.slug}
+              disabled={support}
+              onChange={(e) => editShop((d) => ({ ...d, slug: e.target.value.toLowerCase() }))}
+            />
           </Field>
           <Field
             label="WhatsApp contact (optional)"
             hint="Include the country code. Buyers use this to contact you."
           >
             <input
-              name="contact"
               type="tel"
               pattern="[+0-9 ()-]{8,20}"
-              defaultValue={data.shop.contact || ''}
+              value={shop.contact}
+              disabled={support}
+              onChange={(e) => editShop((d) => ({ ...d, contact: e.target.value }))}
             />
           </Field>
           <Field label="About your shop">
-            <textarea name="bio" defaultValue={data.shop.bio} />
+            <textarea
+              value={shop.bio}
+              disabled={support}
+              onChange={(e) => editShop((d) => ({ ...d, bio: e.target.value }))}
+            />
           </Field>
-          <Button primary type="submit">
-            Save changes
-          </Button>
         </form>
       )}
+      <SaveBar dirty={dirty} busy={saving || pending} onSave={save} onDiscard={discard} />
       <div className="settings-footer">
         {demoMode && (
           <Button icon="RotateCcw" onClick={() => setDialog({ type: 'reset' })}>
@@ -415,7 +579,9 @@ export function Settings() {
         <span className="muted">
           {demoMode
             ? 'Your changes are saved in this browser.'
-            : 'Business data is saved to Supabase. Appearance preferences stay on this device.'}
+            : tab === 'Appearance'
+              ? 'Appearance changes apply instantly and stay on this device.'
+              : 'Changes are saved to Supabase when you press Save changes.'}
         </span>
       </div>
     </>
@@ -423,10 +589,29 @@ export function Settings() {
 }
 export function Welcome() {
   const { data, change, navigate, setDialog, demoMode } = useOps();
+  const finish = () => {
+    markWalkthroughDone(data.workspaceId);
+    navigate('Overview');
+  };
   const [stage, setStage] = useState(0),
     [name, setName] = useState(data.shop.name || ''),
     [bio, setBio] = useState(data.shop.bio || ''),
     [contact, setContact] = useState(data.shop.contact || '');
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    if (touched) return;
+    setName(data.shop.name || '');
+    setBio(data.shop.bio || '');
+    setContact(data.shop.contact || '');
+  }, [data.shop.name, data.shop.bio, data.shop.contact]);
+  useUnsavedChanges(
+    'welcome',
+    stage === 0 &&
+      touched &&
+      (name !== (data.shop.name || '') ||
+        bio !== (data.shop.bio || '') ||
+        contact !== (data.shop.contact || '')),
+  );
   const activeTrips = data.trips.filter((t) => t.status !== 'Closed');
   const activeItems = data.items.filter((i) => i.status !== 'Draft');
   return (
@@ -470,14 +655,20 @@ export function Welcome() {
                 required
                 value={name}
                 placeholder="e.g. Tokyo Curated Finds"
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setTouched(true);
+                  setName(e.target.value);
+                }}
               />
             </Field>
             <Field label="Tagline / Bio" hint="Appears on your public storefront header.">
               <input
                 value={bio}
                 placeholder="e.g. Thoughtfully found beauty, snacks & lifestyle goods from Tokyo & Seoul."
-                onChange={(e) => setBio(e.target.value)}
+                onChange={(e) => {
+                  setTouched(true);
+                  setBio(e.target.value);
+                }}
               />
             </Field>
             <Field
@@ -487,16 +678,11 @@ export function Welcome() {
               <input
                 value={contact}
                 placeholder="e.g. 628123456789"
-                onChange={(e) => setContact(e.target.value)}
+                onChange={(e) => {
+                  setTouched(true);
+                  setContact(e.target.value);
+                }}
               />
-            </Field>
-            <Field label="Base currency">
-              <select defaultValue="IDR">
-                <option value="IDR">IDR · Indonesian rupiah</option>
-                <option value="SGD">SGD · Singapore dollar</option>
-                <option value="USD">USD · US dollar</option>
-                <option value="MYR">MYR · Malaysian ringgit</option>
-              </select>
             </Field>
             <Callout>
               {demoMode
@@ -598,12 +784,8 @@ export function Welcome() {
               <Button icon="ExternalLink" onClick={() => navigate('Storefront')}>
                 Explore your storefront
               </Button>
-              <Button
-                primary={activeItems.length > 0}
-                icon="Check"
-                onClick={() => navigate('Overview')}
-              >
-                Go to overview
+              <Button primary={activeItems.length > 0} icon="Check" onClick={finish}>
+                Finish walkthrough
               </Button>
             </div>
           </div>
@@ -613,7 +795,7 @@ export function Welcome() {
         <I name="CheckCircle2" size={14} />
         <span>No customer account needed. Orders arrive directly in your inbox.</span>
         <button className="text-btn" onClick={() => navigate('Overview')}>
-          Go to overview <I name="ArrowRight" size={14} />
+          Skip for now <I name="ArrowRight" size={14} />
         </button>
       </div>
     </>

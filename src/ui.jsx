@@ -4,6 +4,9 @@ import React, { useId, useEffect, useRef } from 'react';
 import { paymentState } from './money';
 import {
   Circle,
+  Mail,
+  Send,
+  Link2,
   Image,
   LogOut,
   X,
@@ -73,6 +76,9 @@ import {
 } from 'lucide-react';
 const icons = {
   Circle,
+  Mail,
+  Send,
+  Link2,
   Image,
   LogOut,
   X,
@@ -174,7 +180,7 @@ export function Badge({ status }) {
     ? 'green'
     : /Cancelled|Suspended|Past due/.test(status)
       ? 'red'
-      : /Quoted|Trial|Shopping/.test(status)
+      : /Quoted|Trial|Shopping|Invited/.test(status)
         ? 'amber'
         : /Confirmed|Purchased|Open for orders|Delivering/.test(status)
           ? 'blue'
@@ -539,5 +545,69 @@ export function PayBadge({ order }) {
       <i />
       {state.label}
     </span>
+  );
+}
+// Shown when leaving a form with unsaved changes. Page behind is blurred.
+export function ConfirmDialog({
+  title = 'Discard unsaved changes?',
+  text = 'You have changes that haven’t been saved yet. If you leave now, they’ll be lost.',
+  confirmLabel = 'Discard changes',
+  cancelLabel = 'Keep editing',
+  onConfirm,
+  onCancel,
+}) {
+  const keep = useRef();
+  useEffect(() => keep.current?.focus(), []);
+  return (
+    <div className="confirm-scrim" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+      <section
+        className="confirm-card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="confirm-title"
+        aria-describedby="confirm-text"
+      >
+        <span className="confirm-icon">
+          <I name="CircleAlert" size={18} />
+        </span>
+        <h2 id="confirm-title">{title}</h2>
+        <p id="confirm-text">{text}</p>
+        <div className="confirm-actions">
+          <button ref={keep} className="btn" onClick={onCancel}>
+            {cancelLabel}
+          </button>
+          <button className="btn danger" onClick={onConfirm}>
+            {confirmLabel}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+// Thin accent bar across the top of the window during page changes.
+export function TopProgress({ active }) {
+  return (
+    <div className={`top-progress ${active ? 'active' : ''}`} aria-hidden={!active}>
+      {active && <span role="progressbar" aria-label="Loading page" />}
+    </div>
+  );
+}
+// One save pattern for every editable page: appears when there are unsaved changes.
+export function SaveBar({ dirty, busy, onSave, onDiscard, label = 'Save changes' }) {
+  if (!dirty) return null;
+  return (
+    <div className="save-bar" role="region" aria-label="Unsaved changes">
+      <span>
+        <i className="save-dot" />
+        You have unsaved changes
+      </span>
+      <span className="spacer" />
+      <button type="button" className="btn" disabled={busy} onClick={onDiscard}>
+        Discard
+      </button>
+      <button type="button" className="btn primary" disabled={busy} onClick={onSave}>
+        {busy ? 'Saving…' : label}
+      </button>
+    </div>
   );
 }

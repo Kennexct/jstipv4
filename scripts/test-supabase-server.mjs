@@ -6,7 +6,7 @@ const container = 'jastip-integration-' + process.pid;
 await startDatabase(container);
 sql(
   container,
-  `insert into auth.users(id,email,email_confirmed_at) values('00000000-0000-0000-0000-000000000001','owner@example.com',now()),('00000000-0000-0000-0000-000000000004','admin@example.com',now());insert into jastip.platform_admins values('00000000-0000-0000-0000-000000000004');`,
+  `insert into auth.users(id,email,email_confirmed_at) values('00000000-0000-0000-0000-000000000001','owner@example.com',now()),('00000000-0000-0000-0000-000000000004','admin@example.com',now()),('00000000-0000-0000-0000-000000000005','helper@example.com',now());insert into jastip.platform_admins values('00000000-0000-0000-0000-000000000004');`,
 );
 const args = {
   jastip_create_workspace: ['p_name', 'p_slug'],
@@ -23,6 +23,7 @@ const args = {
   jastip_report_store: ['p_slug', 'p_note'],
   jastip_resolve_report: ['p_workspace', 'p_report'],
 };
+const emails = [];
 const jsonArgs = new Set(['p_changes', 'p_shop', 'p_order', 'p_value']);
 const quote = (v) => "'" + String(v).replaceAll("'", "''") + "'";
 const server = http.createServer(async (req, res) => {
@@ -32,7 +33,7 @@ const server = http.createServer(async (req, res) => {
     req.headers['access-control-request-headers'] ||
       'authorization,apikey,content-type,x-client-info',
   );
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS');
   res.setHeader('Content-Type', 'application/json');
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -41,6 +42,35 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.url === '/health') {
     res.end('{}');
+    return;
+  }
+  // Test stand-ins for Supabase Auth email links: record what would be emailed.
+  if (req.url?.startsWith('/auth/v1/otp')) {
+    let raw = '';
+    for await (const chunk of req) raw += chunk;
+    emails.push({
+      ...JSON.parse(raw || '{}'),
+      redirect: new URL(req.url, 'http://x').searchParams.get('redirect_to'),
+    });
+    res.end('{}');
+    return;
+  }
+  if (req.url === '/test/emails') {
+    res.end(JSON.stringify(emails));
+    return;
+  }
+  if (req.url?.startsWith('/auth/v1/user') && req.method === 'PUT') {
+    let raw = '';
+    for await (const chunk of req) raw += chunk;
+    const body = JSON.parse(raw || '{}');
+    res.end(
+      JSON.stringify({
+        id: '00000000-0000-0000-0000-000000000005',
+        email: 'helper@example.com',
+        aud: 'authenticated',
+        user_metadata: { invited: true, ...(body.data || {}) },
+      }),
+    );
     return;
   }
   const name = req.url?.split('/').at(-1);
@@ -62,7 +92,11 @@ const server = http.createServer(async (req, res) => {
     } catch {}
     if (
       id &&
-      !['00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000004'].includes(id)
+      ![
+        '00000000-0000-0000-0000-000000000001',
+        '00000000-0000-0000-0000-000000000004',
+        '00000000-0000-0000-0000-000000000005',
+      ].includes(id)
     )
       throw Error('Unknown test user');
     const params = args[name].map((k) =>

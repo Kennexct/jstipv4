@@ -39,3 +39,18 @@ export function csvCell(value) {
   const text = String(value ?? '');
   return '"' + (/^[=+@\-\t\r]/.test(text) ? "'" : '') + text.replaceAll('"', '""') + '"';
 }
+// Walkthrough is done once the user finishes it, or once a trip and an item both exist.
+const walkthroughKey = (workspaceId) => 'jo-walkthrough-done:' + (workspaceId || 'demo');
+export function markWalkthroughDone(workspaceId) {
+  try {
+    localStorage.setItem(walkthroughKey(workspaceId), '1');
+  } catch {}
+}
+export function walkthroughDone(data) {
+  if (data.trips?.length && data.items?.length) return true;
+  try {
+    return localStorage.getItem(walkthroughKey(data.workspaceId)) === '1';
+  } catch {
+    return false;
+  }
+}

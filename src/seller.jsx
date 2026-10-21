@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useOps } from './store';
 import { money, orderProfit, stockLabel } from './money';
 import { tripStatuses, planDetails } from './data';
+import { walkthroughDone } from './lib/records';
 import {
   I,
   Button,
@@ -119,12 +120,8 @@ export function OrdersTable({ orders, compact = false, selected = [], onSelect }
   );
 }
 export function Overview() {
-  const {
-    data: { orders, trips, items },
-    navigate,
-    setDialog,
-    demoMode,
-  } = useOps();
+  const { data, navigate, setDialog, demoMode, role } = useOps();
+  const { orders, trips, items } = data;
   const live = orders.filter((o) => o.status !== 'Cancelled'),
     revenue = live.reduce((a, o) => a + o.total, 0),
     profit = live.reduce((a, o) => a + orderProfit(o), 0),
@@ -181,7 +178,7 @@ export function Overview() {
           },
         ]}
       />
-      {trips.length === 0 && items.length === 0 ? (
+      {!walkthroughDone(data) && role === 'Owner' ? (
         <div className="attention">
           <I name="Sparkles" />
           <div>

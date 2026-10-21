@@ -173,3 +173,46 @@ test('trips show their status and can be filtered by open, planning or closed', 
   await page.getByRole('button', { name: /^Active/ }).click();
   await expect(cards.filter({ hasText: 'Closed' })).toHaveCount(0);
 });
+test('unsaved changes ask before leaving a form, dialog or settings tab', async ({ page }) => {
+  await page.goto('/#Items');
+  await page.getByRole('button', { name: 'Add item', exact: true }).click();
+  await page.getByLabel('Item name').fill('Half-typed find');
+  await page.keyboard.press('Escape');
+  const confirm = page.getByRole('alertdialog', { name: 'Discard unsaved changes?' });
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(page.getByLabel('Item name')).toHaveValue('Half-typed find');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await confirm.getByRole('button', { name: 'Discard changes' }).click();
+  await expect(page.getByLabel('Item name')).toHaveCount(0);
+
+  await page.goto('/#Settings');
+  await page.getByRole('button', { name: 'Currency', exact: true }).click();
+  const rate = page.getByLabel('JPY exchange rate');
+  await rate.fill('110');
+  await expect(page.getByRole('region', { name: 'Unsaved changes' })).toBeVisible();
+  await page
+    .locator('.sidebar nav')
+    .getByRole('button', { name: /^Orders/ })
+    .click();
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole('button', { name: 'Keep editing' }).click();
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Exchange rates saved.')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Unsaved changes' })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByLabel('JPY exchange rate')).toHaveValue('110');
+});
+test('page changes show the top loading bar and finished walkthroughs are hidden', async ({
+  page,
+}) => {
+  await page.goto('/#Overview');
+  await page
+    .locator('.sidebar nav')
+    .getByRole('button', { name: /^Orders/ })
+    .click();
+  await expect(page.getByRole('progressbar', { name: 'Loading page' })).toBeVisible();
+  await expect(page.getByRole('progressbar', { name: 'Loading page' })).toHaveCount(0);
+  await page.locator('.workspace-switch').click();
+  await expect(page.getByRole('dialog')).not.toContainText('Start the walkthrough');
+});

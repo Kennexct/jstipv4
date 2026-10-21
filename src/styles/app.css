@@ -3760,31 +3760,7 @@ tfoot td {
 .live-chart .chart-y {
   justify-content: space-between;
 }
-/* Page transitions: thin progress bar + loader (2026-10-21) */
-.route-progress {
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  height: 2px;
-  overflow: hidden;
-  background: var(--accent-soft);
-}
-.route-progress::after {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 35%;
-  background: var(--accent);
-  animation: route-progress 1.1s ease-in-out infinite;
-}
-@keyframes route-progress {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(300%);
-  }
-}
+/* Loader (2026-10-21) */
 .loader {
   display: grid;
   justify-items: center;
@@ -3979,4 +3955,137 @@ tfoot td {
   gap: 16px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+/* Unsaved-changes confirm, top progress bar, save bar (2026-10-21) */
+.confirm-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: fade-in var(--dur) var(--ease);
+}
+.confirm-card {
+  width: 400px;
+  max-width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-pop);
+  padding: 24px;
+  animation: modal-in var(--dur) var(--ease);
+}
+.confirm-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 12%, var(--surface));
+  margin-bottom: 14px;
+}
+.confirm-card h2 {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+.confirm-card p {
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.top-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 300;
+  pointer-events: none;
+  overflow: hidden;
+}
+.top-progress span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 50%, transparent);
+  animation: top-progress 1s ease-in-out infinite;
+}
+@keyframes top-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+:root[data-motion='reduce'] .top-progress span,
+:root[data-motion='reduced'] .top-progress span {
+  animation: none !important;
+  width: 100%;
+  opacity: 0.6;
+}
+@media (prefers-reduced-motion: reduce) {
+  .top-progress span {
+    width: 100%;
+    opacity: 0.6;
+  }
+}
+.save-bar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 10px 12px 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-pop);
+  font-size: var(--fs-sm);
+}
+.save-bar > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.save-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+@media (max-width: 640px) {
+  .save-bar {
+    bottom: 76px;
+    flex-wrap: wrap;
+  }
+}
+.member-row .member-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.invite-status {
+  display: block;
+  font-size: var(--fs-2xs);
+  color: var(--amber);
+  margin-top: 2px;
 }
