@@ -9,7 +9,7 @@ import { ConnectionGate } from './auth';
 import { Overview, Orders, Items, Requests, Trips, Purchasing, Reports, Customers } from './seller';
 import { Billing, Settings, Welcome, Storefront, Admin } from './workspaces';
 import { Dialog, DetailDrawer, CommandPalette } from './dialogs';
-import { I, Button, Avatar, Empty, Header, Skeleton, Progress, navIcons } from './ui';
+import { I, Button, Avatar, Empty, Header, Skeleton, StoreLoading, Progress, navIcons } from './ui';
 import { planDetails } from './data';
 import './styles/tokens.css';
 import './styles/app.css';
@@ -53,13 +53,15 @@ function App() {
     signOut,
     pending,
     reload,
+    pageLoading,
     exitSupport,
   } = useOps();
   const [notifications, setNotifications] = useState(false);
   if (!demoMode && (connection !== 'ready' || page === 'Recovery')) return <ConnectionGate />;
   const open = data.orders.filter((o) => !['Cancelled', 'Delivered'].includes(o.status)),
     requests = data.orders.filter((o) => o.status === 'Requested'),
-    plan = planDetails.find((p) => p.name === data.plan) || planDetails[0];
+    plan = planDetails.find((p) => p.name === data.plan) || planDetails[0],
+    activeItems = data.items.filter((i) => i.status !== 'Draft').length;
   const navs =
     mode === 'admin'
       ? ['Metrics', 'Merchants', 'Moderation', 'Audit']
@@ -78,7 +80,11 @@ function App() {
         Skip to content
       </a>
       {mode === 'store' ? (
-        <Storefront />
+        pageLoading ? (
+          <StoreLoading />
+        ) : (
+          <Storefront />
+        )
       ) : (
         <div className="app-shell">
           {mobile && <div className="sidebar-scrim" onClick={() => setMobile(false)} />}
@@ -100,6 +106,22 @@ function App() {
               </div>
               <I name="ChevronsUpDown" size={13} />
             </button>
+            {mode === 'seller' && (
+              <div className="plan-note">
+                <div>
+                  <I name="Layers" size={15} />
+                  <strong>{data.plan} plan</strong>
+                  <span>Monthly</span>
+                </div>
+                <p>
+                  {activeItems} of {plan.items} active items
+                </p>
+                <Progress value={Math.min(100, (activeItems / plan.items) * 100)} />
+                <button className="text-btn" onClick={() => navigate('Billing')}>
+                  Manage plan <I name="ArrowUpRight" size={12} />
+                </button>
+              </div>
+            )}
             <button className="sidebar-search" onClick={() => setPalette(true)}>
               <I name="Search" size={14} />
               <span>Search anything…</span>
@@ -166,33 +188,6 @@ function App() {
               </>
             )}
             <div className="sidebar-footer">
-              {!demoMode && (
-                <button className="nav-item" onClick={signOut}>
-                  <I name="LogOut" />
-                  <span>Sign out</span>
-                </button>
-              )}
-              {mode === 'seller' && (
-                <div className="plan-note">
-                  <div>
-                    <I name="Layers" size={15} />
-                    <strong>{data.plan} plan</strong>
-                    <span>Monthly</span>
-                  </div>
-                  <p>
-                    {data.items.filter((i) => i.status !== 'Draft').length} of {plan.items} active
-                    items
-                  </p>
-                  <Progress
-                    value={
-                      (data.items.filter((i) => i.status !== 'Draft').length / plan.items) * 100
-                    }
-                  />
-                  <button className="text-btn" onClick={() => navigate('Billing')}>
-                    Manage plan <I name="ArrowUpRight" size={12} />
-                  </button>
-                </div>
-              )}
               <button className="nav-item" onClick={() => setDialog({ type: 'help' })}>
                 <I name="CircleHelp" />
                 <span>Help & shortcuts</span>
@@ -213,6 +208,12 @@ function App() {
                 </div>
                 <I name="ChevronsUpDown" size={13} />
               </button>
+              {!demoMode && (
+                <button className="nav-item sign-out" onClick={signOut} disabled={pending}>
+                  <I name="LogOut" />
+                  <span>Sign out</span>
+                </button>
+              )}
             </div>
           </aside>
           <main className="main">
@@ -237,7 +238,11 @@ function App() {
               </div>
               <div className="topbar-actions">
                 {!demoMode && (
-                  <button className="text-btn" disabled={pending} onClick={reload}>
+                  <button
+                    className="text-btn"
+                    disabled={pending || pageLoading}
+                    onClick={() => reload({ quiet: true })}
+                  >
                     {pending ? 'Saving…' : 'Refresh'}
                   </button>
                 )}
@@ -288,7 +293,8 @@ function App() {
                       <i className="nav-dot" />
                       <div>
                         <strong>
-                          {requests.length} new order {requests.length === 1 ? 'request' : 'requests'}
+                          {requests.length} new order{' '}
+                          {requests.length === 1 ? 'request' : 'requests'}
                         </strong>
                         <p>Your customers requested custom finds.</p>
                         <small>Action needed</small>
@@ -317,9 +323,7 @@ function App() {
                       </button>
                     ))}
                   {!requests.length &&
-                    !data.trips.some((t) =>
-                      ['Open for orders', 'Shopping'].includes(t.status),
-                    ) && (
+                    !data.trips.some((t) => ['Open for orders', 'Shopping'].includes(t.status)) && (
                       <div
                         style={{
                           padding: '16px',
@@ -343,8 +347,11 @@ function App() {
                 </button>
               </div>
             )}
+            {pageLoading && (
+              <div className="route-progress" role="progressbar" aria-label="Loading page" />
+            )}
             <div id="main" tabIndex="-1" className="page" key={page + screenState}>
-              {screenState === 'loading' ? (
+              {screenState === 'loading' || pageLoading ? (
                 <Skeleton />
               ) : screenState === 'error' ? (
                 <>

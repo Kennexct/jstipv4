@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useOps } from './store';
-import { money } from './money';
+import { money, isUnlimited, stockLabel, depositLabel } from './money';
 import { planDetails } from './data';
 import { LiveBilling, LiveAdminSummary } from './live-workspaces';
 import { rpc } from './lib/supabase';
@@ -473,10 +473,7 @@ export function Welcome() {
                 onChange={(e) => setName(e.target.value)}
               />
             </Field>
-            <Field
-              label="Tagline / Bio"
-              hint="Appears on your public storefront header."
-            >
+            <Field label="Tagline / Bio" hint="Appears on your public storefront header.">
               <input
                 value={bio}
                 placeholder="e.g. Thoughtfully found beauty, snacks & lifestyle goods from Tokyo & Seoul."
@@ -516,7 +513,9 @@ export function Welcome() {
               <I name="Plane" size={20} />
             </span>
             <h2>Where are you shopping next?</h2>
-            <p>A trip groups your shopping destination, travel dates, and travel expense allocation.</p>
+            <p>
+              A trip groups your shopping destination, travel dates, and travel expense allocation.
+            </p>
             {activeTrips.length > 0 ? (
               <div className="onboarding-options">
                 {activeTrips.map((t) => (
@@ -563,13 +562,17 @@ export function Welcome() {
               <I name="Package" size={20} />
             </span>
             <h2>Turn a find into your first listing</h2>
-            <p>Add a photo, cost, and markup percentage. We calculate your margin before you publish.</p>
+            <p>
+              Add a photo, cost, and markup percentage. We calculate your margin before you publish.
+            </p>
             {activeItems.length > 0 ? (
               <div className="onboarding-options">
                 {activeItems.map((item) => (
                   <div key={item.id}>
                     <strong>{item.name}</strong>
-                    <small>Stock: {item.qty} · {item.category}</small>
+                    <small>
+                      {stockLabel(item)} · {item.category}
+                    </small>
                     <Badge status={item.status} />
                   </div>
                 ))}
@@ -621,38 +624,66 @@ export function Storefront() {
     data: { items, trips, shop },
     navigate,
     setDialog,
-    copy,
+    session,
     demoMode,
   } = useOps();
   const [q, setQ] = useState(''),
     [trip, setTrip] = useState('all'),
     [category, setCategory] = useState('All'),
     [availability, setAvailability] = useState('All availability');
-  const list = items.filter(
+  // Only the merchant who opened "Your storefront" from the workspace sees a way back.
+  let preview = demoMode;
+  try {
+    preview = demoMode || (!!session && sessionStorage.getItem('jo-store-preview') === '1');
+  } catch {}
+  const listed = items.filter((i) => i.status !== 'Draft' && (isUnlimited(i) || i.qty > 0));
+  const openTrips = trips.filter(
+    (t) => t.status === 'Open for orders' || listed.some((i) => i.trip === t.id),
+  );
+  const categories = [...new Set(listed.map((i) => i.category).filter(Boolean))];
+  const list = listed.filter(
     (i) =>
-      i.status !== 'Draft' &&
-      i.qty > 0 &&
       (trip === 'all' || i.trip === trip) &&
       (category === 'All' || i.category === category) &&
       (availability === 'All availability' || i.status === availability) &&
-      i.name.toLowerCase().includes(q.toLowerCase()),
+      (i.name || '').toLowerCase().includes(q.toLowerCase()),
+  );
+  const focus = openTrips.find((t) => t.id === trip) || openTrips[0];
+  const groups = (trip === 'all' ? openTrips : openTrips.filter((t) => t.id === trip))
+    .map((t) => ({ trip: t, items: list.filter((i) => i.trip === t.id) }))
+    .filter((g) => g.items.length);
+  const cities = [...new Set(openTrips.map((t) => t.city).filter(Boolean))];
+  const product = (i) => (
+    <button
+      className="store-product"
+      key={i.id}
+      onClick={() => setDialog({ type: 'product', item: i })}
+    >
+      <div className="store-image">
+        <ProductArt item={i} />
+        <Badge status={i.status} />
+      </div>
+      <small>{i.category}</small>
+      <h3>{i.name}</h3>
+      <strong>{money(i.selling)}</strong>
+      <span>
+        {stockLabel(i)}
+        {depositLabel(i) && <em className="store-dp">{depositLabel(i)}</em>}
+      </span>
+    </button>
   );
   return (
     <div className="storefront">
-      <div className="store-demo-bar">
-        <span>
-          <I name="Store" size={14} />
-          Public storefront
-        </span>
-        <span>{shop.slug}</span>
-        <Button icon="ArrowLeft" onClick={() => navigate('Overview')}>
-          Back to workspace
-        </Button>
-      </div>
+      {preview && (
+        <button className="store-preview-exit" onClick={() => navigate('Overview')}>
+          <I name="ArrowLeft" size={14} />
+          Exit preview
+        </button>
+      )}
       <div className="store-shell">
         <header className="store-header">
           <div className="store-brand">
-            <span className="store-monogram">{shop.name.slice(0, 1).toLowerCase()}.</span>
+            <span className="store-monogram">{(shop.name || 'j').slice(0, 1).toLowerCase()}.</span>
             <div>
               <h2>{shop.name}</h2>
               <span>Thoughtfully found. Happily brought home.</span>
@@ -685,31 +716,46 @@ export function Storefront() {
           </div>
         </header>
         <section className="store-intro">
-          <span className="eyebrow">From there, with care</span>
+          <span className="eyebrow">
+            {focus ? `Now shopping · ${focus.name}` : 'From there, with care'}
+          </span>
           <h1>A little closer to your favorite finds.</h1>
-          <p>
-            {shop.bio}
-            <br />
-            Browse the trip, find your thing, and we’ll bring it home.
-          </p>
-          <div className="store-trust">
-            <span>
-              <I name="Plane" size={14} />
-              Next delivery · {trips[0]?.dates || 'Ask your merchant'}
-            </span>
-            <span>
-              <I name="MapPin" size={14} />
-              Shipping from {trips[0]?.hub || 'your merchant'}
-            </span>
-            <span>
-              <I name="BadgeCheck" size={14} />
-              Personal shopping, personal care
-            </span>
-          </div>
+          {shop.bio && <p>{shop.bio}</p>}
         </section>
+        {openTrips.length > 0 && (
+          <section className="store-trips" aria-label="Current trips">
+            {openTrips.map((t) => {
+              const count = listed.filter((i) => i.trip === t.id).length;
+              const active = trip === t.id;
+              return (
+                <button
+                  key={t.id}
+                  className={`store-trip ${active ? 'active' : ''}`}
+                  aria-pressed={active}
+                  onClick={() => setTrip(active ? 'all' : t.id)}
+                >
+                  <span className="trip-glyph">
+                    <I name="Plane" size={16} />
+                  </span>
+                  <span className="store-trip-body">
+                    <small>{t.status === 'Open for orders' ? 'Open for orders' : t.status}</small>
+                    <strong>{t.name}</strong>
+                    <span>
+                      {[t.city, t.dates].filter(Boolean).join(' · ') || 'Dates coming soon'}
+                    </span>
+                    <span className="store-trip-meta">
+                      {count} {count === 1 ? 'find' : 'finds'}
+                      {t.hub ? ` · Delivered from ${t.hub}` : ''}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </section>
+        )}
         <div className="store-toolbar">
           <SearchField value={q} onChange={setQ} placeholder="Find something you love…" />
-          <TripFilter trips={trips} value={trip} onChange={setTrip} />
+          <TripFilter trips={openTrips} value={trip} onChange={setTrip} />
           <select
             aria-label="Filter availability"
             value={availability}
@@ -720,43 +766,44 @@ export function Storefront() {
             <option>Pre-order</option>
           </select>
         </div>
-        <div className="store-tabs">
-          {['All', 'Beauty', 'Fashion', 'Food & drink'].map((c) => (
-            <button
-              key={c}
-              className={category === c ? 'active' : ''}
-              onClick={() => setCategory(c)}
-            >
-              {c === 'All' ? 'All finds' : c}
-            </button>
-          ))}
-          <span className="spacer" />
-          <small>{list.length} finds</small>
-        </div>
-        <div className="store-grid">
-          {list.map((i) => (
-            <button
-              className="store-product"
-              key={i.id}
-              onClick={() => setDialog({ type: 'product', item: i })}
-            >
-              <div className="store-image">
-                <ProductArt item={i} />
-                <Badge status={i.status} />
-              </div>
-              <small>{i.category}</small>
-              <h3>{i.name}</h3>
-              <strong>{money(i.selling)}</strong>
-              <span>
-                {trips.find((t) => t.id === i.trip)?.name} · {i.qty} left
-              </span>
-            </button>
-          ))}
-        </div>
+        {categories.length > 1 && (
+          <div className="store-tabs">
+            {['All', ...categories].map((c) => (
+              <button
+                key={c}
+                className={category === c ? 'active' : ''}
+                onClick={() => setCategory(c)}
+              >
+                {c === 'All' ? 'All finds' : c}
+              </button>
+            ))}
+            <span className="spacer" />
+            <small>{list.length} finds</small>
+          </div>
+        )}
+        {groups.map((g) => (
+          <section className="store-trip-group" key={g.trip.id}>
+            <div className="store-trip-heading">
+              <I name="Plane" size={15} />
+              <h2>{g.trip.name}</h2>
+              <span>{[g.trip.city, g.trip.dates].filter(Boolean).join(' · ')}</span>
+            </div>
+            <div className="store-grid">{g.items.map(product)}</div>
+          </section>
+        ))}
+        {list.some((i) => !openTrips.some((t) => t.id === i.trip)) && (
+          <div className="store-grid">
+            {list.filter((i) => !openTrips.some((t) => t.id === i.trip)).map(product)}
+          </div>
+        )}
         {!list.length && (
           <Empty
-            title="This trip has no items yet"
-            text="Follow along for updates, or request something you have in mind."
+            title={listed.length ? 'No finds match your search' : 'This trip has no items yet'}
+            text={
+              listed.length
+                ? 'Try another trip, category or search.'
+                : 'Follow along for updates, or request something you have in mind.'
+            }
           />
         )}
         <div className="request-banner">
@@ -767,13 +814,17 @@ export function Storefront() {
             <h3>Have something in mind?</h3>
             <p>Send a link or a wish. We’ll look for it on our next trip.</p>
           </div>
-          <Button icon="ArrowUpRight" onClick={() => setDialog({ type: 'buyer-request' })}>
+          <Button
+            icon="ArrowUpRight"
+            disabled={!openTrips.length}
+            onClick={() => setDialog({ type: 'buyer-request' })}
+          >
             Request an item
           </Button>
         </div>
         <footer className="store-footer">
           <span>{shop.name}</span>
-          <span>Personal shopping from Japan & Korea</span>
+          {cities.length > 0 && <span>Personal shopping from {cities.join(', ')}</span>}
           <button className="text-btn" onClick={() => setDialog({ type: 'report' })}>
             Report storefront
           </button>

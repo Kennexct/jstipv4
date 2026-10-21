@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useOps } from './store';
-import { money, orderProfit } from './money';
+import { money, orderProfit, stockLabel } from './money';
 import { tripStatuses, planDetails } from './data';
 import {
   I,
@@ -18,6 +18,7 @@ import {
   Callout,
   RevenueChart,
   ProductArt,
+  PayBadge,
 } from './ui';
 export function OrdersTable({ orders, compact = false, selected = [], onSelect }) {
   const { setDrawer, demoMode } = useOps();
@@ -185,7 +186,9 @@ export function Overview() {
           <I name="Sparkles" />
           <div>
             <strong>Start your workspace walkthrough</strong>
-            <span>Set your shop details, plan your first shopping trip, and add your first find.</span>
+            <span>
+              Set your shop details, plan your first shopping trip, and add your first find.
+            </span>
           </div>
           <Button primary icon="ArrowRight" onClick={() => navigate('Welcome')}>
             Start walkthrough
@@ -441,7 +444,7 @@ export function Items() {
               <span className="muted">{trips.find((t) => t.id === i.trip)?.name}</span>
               <div className="item-price">
                 <strong>{money(i.selling)}</strong>
-                <small>{i.qty} left</small>
+                <small>{stockLabel(i)}</small>
               </div>
               {role !== 'Helper' && (
                 <div className="item-margin">
@@ -809,72 +812,204 @@ export function Purchasing() {
     data: { orders, items, trips },
     setDialog,
     updateOrder,
+    exportCsv,
     role,
     demoMode,
   } = useOps();
-  const [trip, setTrip] = useState('all');
+  const [trip, setTrip] = useState('all'),
+    [view, setView] = useState('Checklist');
+  // Confirmed orders can be bought before the customer pays in full; only the DP must be in.
   const list = orders.filter(
-    (o) => ['Paid', 'Purchased'].includes(o.status) && (trip === 'all' || o.trip === trip),
+    (o) =>
+      ['Confirmed', 'Paid', 'Purchased'].includes(o.status) && (trip === 'all' || o.trip === trip),
   );
+  const toBuy = list.filter((o) => o.status !== 'Purchased'),
+    bought = list.filter((o) => o.status === 'Purchased'),
+    outstanding = list.reduce((sum, o) => sum + Math.max(0, o.total - o.paid), 0),
+    dpDue = toBuy.filter((o) => (o.deposit || 0) > o.paid);
   const store = (o) => items.find((i) => i.id === o.itemId)?.store || 'Other';
   const stores = [...new Set(list.map(store))];
+  const recap = Object.values(
+    list.reduce((acc, o) => {
+      const key = o.itemId || 'request:' + o.item;
+      const row = (acc[key] ||= {
+        item: o.item,
+        store: store(o),
+        units: 0,
+        bought: 0,
+        orders: 0,
+        estimate: 0,
+        outstanding: 0,
+      });
+      row.units += o.qty;
+      row.bought += o.status === 'Purchased' ? o.qty : 0;
+      row.orders += 1;
+      row.estimate += (o.quotedCost || 0) * o.qty;
+      row.outstanding += Math.max(0, o.total - o.paid);
+      return acc;
+    }, {}),
+  ).sort((x, y) => y.units - y.bought - (x.units - x.bought));
+  const canPurchase = (o) => role !== 'Helper' && o.status !== 'Purchased';
   return (
     <>
       <Header
         title="Purchase checklist"
-        description="One list for your shopping day, grouped by store."
+        description="Everything confirmed for this trip, ready for your shopping day and your end-of-trip recap."
+      >
+        {list.length > 0 && (
+          <Button
+            icon="Download"
+            onClick={() =>
+              exportCsv(
+                recap.map((r) => ({
+                  Item: r.item,
+                  Store: r.store,
+                  'Units ordered': r.units,
+                  'Units purchased': r.bought,
+                  Orders: r.orders,
+                  ...(role === 'Helper' ? {} : { 'Estimated cost': r.estimate }),
+                  Outstanding: r.outstanding,
+                })),
+                'purchase-recap',
+              )
+            }
+          >
+            Export recap
+          </Button>
+        )}
+      </Header>
+      <Stats
+        stats={[
+          {
+            label: 'To buy',
+            value: toBuy.length,
+            caption: `${toBuy.reduce((n, o) => n + o.qty, 0)} units`,
+            icon: 'ShoppingBag',
+          },
+          {
+            label: 'Purchased',
+            value: bought.length,
+            caption: `${bought.reduce((n, o) => n + o.qty, 0)} units`,
+            icon: 'Check',
+          },
+          {
+            label: 'Still to collect',
+            value: money(outstanding),
+            caption: outstanding ? 'Remind before shipping' : 'All paid',
+            tone: outstanding ? 'amber' : '',
+            icon: 'Wallet',
+          },
+          {
+            label: 'DP due',
+            value: dpDue.length,
+            caption: dpDue.length ? 'Collect before buying' : 'None waiting',
+            tone: dpDue.length ? 'amber' : '',
+            icon: 'CircleAlert',
+          },
+        ]}
       />
       <div className="toolbar">
         <TripFilter trips={trips} value={trip} onChange={setTrip} />
+        <Tabs options={['Checklist', 'Recap by item']} value={view} onChange={setView} />
         <span className="spacer" />
         <span className="muted">
-          {list.filter((o) => o.status === 'Purchased').length} of {list.length} purchased
+          {bought.length} of {list.length} purchased
         </span>
       </div>
-      {stores.map((s) => (
-        <section className="panel purchase-store" key={s}>
-          <div className="panel-head">
-            <h2>
-              <I name="Store" size={15} />
-              {s}
-            </h2>
-            <small>{list.filter((o) => store(o) === s).length} orders</small>
+      {view === 'Recap by item' && list.length > 0 && (
+        <section className="panel">
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Store</th>
+                  <th>Units</th>
+                  <th>Purchased</th>
+                  <th>Orders</th>
+                  {role !== 'Helper' && <th>Estimated cost</th>}
+                  <th>Outstanding</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recap.map((r) => (
+                  <tr key={r.item + r.store}>
+                    <td>
+                      <strong>{r.item}</strong>
+                    </td>
+                    <td>{r.store}</td>
+                    <td className="mono">{r.units}</td>
+                    <td className="mono">
+                      {r.bought} / {r.units}
+                    </td>
+                    <td className="mono">{r.orders}</td>
+                    {role !== 'Helper' && <td className="mono">{money(r.estimate)}</td>}
+                    <td className={`mono ${r.outstanding ? 'amber' : ''}`}>
+                      {money(r.outstanding)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          {list
-            .filter((o) => store(o) === s)
-            .map((o) => (
-              <div className="purchase-row" key={o.id}>
-                <input
-                  type="checkbox"
-                  aria-label={'Mark ' + o.item + ' purchased'}
-                  disabled={!demoMode && (role === 'Helper' || o.status === 'Purchased')}
-                  checked={o.status === 'Purchased'}
-                  onChange={(e) =>
-                    e.target.checked
-                      ? setDialog({ type: 'purchase', order: o })
-                      : updateOrder(o.id, { status: 'Paid', actualCost: null })
-                  }
-                />
-                <div>
-                  <strong className={o.status === 'Purchased' ? 'completed' : ''}>{o.item}</strong>
-                  <small>
-                    {o.qty} × · {o.name} · {o.id}
-                  </small>
-                </div>
-                <span className="muted">
-                  {role === 'Helper'
-                    ? 'Manager records purchase cost'
-                    : money(o.quotedCost) + ' estimated'}
-                </span>
-                <Badge status={o.status} />
-              </div>
-            ))}
         </section>
-      ))}
+      )}
+      {view === 'Checklist' &&
+        stores.map((s) => (
+          <section className="panel purchase-store" key={s}>
+            <div className="panel-head">
+              <h2>
+                <I name="Store" size={15} />
+                {s}
+              </h2>
+              <small>{list.filter((o) => store(o) === s).length} orders</small>
+            </div>
+            {list
+              .filter((o) => store(o) === s)
+              .map((o) => (
+                <div className="purchase-row" key={o.id}>
+                  <input
+                    type="checkbox"
+                    aria-label={'Mark ' + o.item + ' purchased'}
+                    disabled={!demoMode && !canPurchase(o)}
+                    checked={o.status === 'Purchased'}
+                    onChange={(e) =>
+                      e.target.checked
+                        ? (o.deposit || 0) > o.paid
+                          ? updateOrder(o.id, { status: 'Purchased' })
+                          : setDialog({ type: 'purchase', order: o })
+                        : demoMode &&
+                          updateOrder(o.id, {
+                            status: o.paid >= o.total ? 'Paid' : 'Confirmed',
+                            actualCost: null,
+                          })
+                    }
+                  />
+                  <div>
+                    <strong className={o.status === 'Purchased' ? 'completed' : ''}>
+                      {o.item}
+                    </strong>
+                    <small>
+                      {o.qty} × · {o.name} · {o.id}
+                    </small>
+                  </div>
+                  <span className="muted">
+                    {role === 'Helper'
+                      ? 'Manager records purchase cost'
+                      : money(o.quotedCost * o.qty) + ' estimated'}
+                  </span>
+                  <span className="purchase-badges">
+                    <PayBadge order={o} />
+                    <Badge status={o.status} />
+                  </span>
+                </div>
+              ))}
+          </section>
+        ))}
       {!list.length && (
         <Empty
           title="Nothing to buy yet"
-          text="Paid orders appear here, ready for your next shopping day."
+          text="Confirmed orders appear here, paid or not, ready for your next shopping day."
         />
       )}
     </>

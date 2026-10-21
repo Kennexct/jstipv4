@@ -1,6 +1,6 @@
 // Isolated local PostgreSQL checks. Never points at the live Supabase project.
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -38,7 +38,11 @@ export async function startDatabase(name) {
   sql(name, bootstrap);
   sql(
     name,
-    readFileSync(path.join(root, 'supabase/migrations/202610100001_operations.sql'), 'utf8'),
+    readdirSync(path.join(root, 'supabase/migrations'))
+      .filter((file) => file.endsWith('.sql'))
+      .sort()
+      .map((file) => readFileSync(path.join(root, 'supabase/migrations', file), 'utf8'))
+      .join('\n'),
   );
 }
 export function stopDatabase(name) {

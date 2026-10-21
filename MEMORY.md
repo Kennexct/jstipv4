@@ -111,7 +111,7 @@ Raw business tables are strictly private (`revoke all on schema jastip from publ
 - `jastip_place_order(p_slug, p_order)`: Public checkout. Server verifies price calculation and atomically reserves item stock. Generates private random tracking token.
 - `jastip_track_order(p_token)`: Public order tracking by private token. Returns order status and item summary without exposing customer identity.
 - `jastip_invite_member(p_workspace, p_email, p_role)`: Owner creates an invitation link.
-- `jastip_accept_invitation(p_invite)`: Verifies user email matches invitation before granting membership.
+- `jastip_accept_invitation(p_invitation)`: Verifies user email matches invitation before granting membership.
 - `jastip_admin_action(p_workspace, p_action, p_value)`: Platform-level actions (plan upgrade, trial dates, suspension, notes).
 
 ---
@@ -136,6 +136,15 @@ Raw business tables are strictly private (`revoke all on schema jastip from publ
      2. Setting up their first shopping trip (destination, dates, budget).
      3. Adding their first find with real-time pricing and margin calculation.
    - Fresh workspaces on Overview display a dedicated walkthrough launcher card until the first trip and find are established.
+
+6. **Flexible orders (2026-10-21, migration `202610210001_flexible_orders.sql`)**:
+   - Items may have **no stock limit** (`unlimited: true`, `qty` 0). Stock is never reserved or restocked for them; public orders are capped at **20 per order** (`MAX_UNLIMITED_PER_ORDER`).
+   - Items and quotes may require a **down payment**: `depositMode` `none | percent | amount`, `depositValue` (percent of order total, or Rp per unit). Orders store a frozen `deposit` (Rp), computed by the server for item orders (`jastip.deposit_for`) and mirrored in `src/money.js#depositFor`.
+   - **Buy before payment**: `Confirmed → Purchased` is allowed once `paid ≥ deposit`. `Paid`, `Shipped` and `Delivered` require full payment. Payments on purchased orders never move the status back to `Paid`.
+   - Item-linked orders cannot change `itemId`/`qty`; cancel and re-create instead (prevents stock drift).
+   - Purchasing lists Confirmed + Paid + Purchased orders, with a "Recap by item" view and CSV export for the end-of-trip recap.
+7. **Navigation loading**: in-app navigation and Refresh use quiet reloads (`reload({ quiet: true })`) that show a top progress bar + skeleton; only the first load and auth changes use the full-screen connection gate.
+8. **Storefront**: no workspace bar for customers; open trips are highlighted as cards and items are grouped by trip. Merchants previewing from the workspace get a small "Exit preview" button (`sessionStorage['jo-store-preview']`).
 
 ---
 

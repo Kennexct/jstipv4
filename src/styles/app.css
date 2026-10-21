@@ -3729,3 +3729,223 @@ tfoot td {
 .live-chart .chart-y {
   justify-content: space-between;
 }
+/* Page transitions: thin progress bar + loader (2026-10-21) */
+.route-progress {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  height: 2px;
+  overflow: hidden;
+  background: var(--accent-soft);
+}
+.route-progress::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  background: var(--accent);
+  animation: route-progress 1.1s ease-in-out infinite;
+}
+@keyframes route-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+.loader {
+  display: grid;
+  justify-items: center;
+  gap: var(--s-3);
+  padding: var(--s-6) 0;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.loader-mark {
+  grid-area: 1 / 1;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}
+.loader-ring {
+  grid-area: 1 / 1;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid var(--surface-3);
+  border-top-color: var(--accent);
+  animation: loader-spin 0.9s linear infinite;
+}
+.loader-label {
+  grid-row: 2;
+}
+@keyframes loader-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.store-loading {
+  display: grid;
+  place-items: center;
+}
+.sidebar-footer .sign-out {
+  margin-top: var(--s-2);
+  color: var(--text-3);
+}
+.sidebar > .plan-note {
+  margin: var(--s-3) 0 var(--s-2);
+  flex-shrink: 0;
+}
+/* Storefront: trip highlights, preview exit (2026-10-21) */
+.store-preview-exit {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+}
+.store-trips {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  margin: 0 0 24px;
+}
+.store-trip {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  min-width: 0;
+}
+.store-trip.active {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+.store-trip .trip-glyph {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.store-trip-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.store-trip-body small {
+  font-size: var(--fs-2xs);
+  color: var(--accent);
+  font-weight: 500;
+}
+.store-trip-body strong {
+  font-size: var(--fs);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.store-trip-body > span {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+.store-trip-meta {
+  color: var(--text-2) !important;
+}
+.store-trip-group {
+  margin-bottom: 32px;
+}
+.store-trip-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--accent);
+}
+.store-trip-heading h2 {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+.store-trip-heading span {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+.store-product > span {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.store-dp {
+  font-style: normal;
+  font-size: var(--fs-2xs);
+  color: var(--accent);
+  border: 1px solid var(--accent-line);
+  border-radius: 4px;
+  padding: 0 5px;
+}
+@media (max-width: 640px) {
+  .store-trips {
+    grid-template-columns: 1fr;
+  }
+  .store-trip-heading {
+    flex-wrap: wrap;
+  }
+}
+.check-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 2px 0 12px;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.check-row input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.check-row small {
+  display: block;
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+}
+.drawer-section h3 .badge {
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.checkout-summary small {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.purchase-badges {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.input-combo.dp-combo select {
+  width: auto;
+  min-width: 130px;
+  flex: 1 1 130px;
+}
+.store-header > div:last-child {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}

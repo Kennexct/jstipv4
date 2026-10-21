@@ -59,3 +59,47 @@ select public.test_assert(public.jastip_load_workspace()->>'role'='Manager','Own
 select public.test_denied($q$select public.jastip_set_member_role(current_setting('test.workspace')::uuid,'00000000-0000-0000-0000-000000000001','Helper')$q$,'Only the owner');
 reset role;
 select 'PASS: all database security/workflow and role assignment checks.';
+-- 2026-10-21 flexible orders: no-limit stock, down payments, buy before payment.
+set role authenticated;set request.jwt.claim.sub='00000000-0000-0000-0000-000000000002';
+select set_config('test.flex',public.jastip_create_workspace('Flex shop','flex-shop')::text,false);
+select public.test_denied($q$select public.jastip_commit(current_setting('test.flex')::uuid,0,'[{"kind":"trips","data":{"id":"t","name":"Seoul","status":"Open for orders","currency":"KRW","rate":12,"budget":0,"actual":0,"units":1,"allocation":"none","start":"2026-10-10","end":"2026-10-20"}},{"kind":"items","data":{"id":"bad","trip":"t","name":"Bad DP","status":"Available","currency":"JPY","rate":105,"price":1000,"markup":20,"markupMode":"percent","selling":126000,"cost":105000,"allocation":0,"qty":1,"depositMode":"percent","depositValue":150}}]')$q$,'valid down payment');
+select public.jastip_commit(current_setting('test.flex')::uuid,0,'[
+ {"kind":"trips","data":{"id":"t","name":"Seoul","status":"Open for orders","currency":"KRW","rate":12,"budget":0,"actual":0,"units":1,"allocation":"none","start":"2026-10-10","end":"2026-10-20"}},
+ {"kind":"items","data":{"id":"open","trip":"t","name":"No-limit snack","status":"Available","currency":"JPY","rate":105,"price":1000,"markup":20,"markupMode":"percent","selling":126000,"cost":105000,"allocation":0,"qty":0,"unlimited":true,"depositMode":"percent","depositValue":50}},
+ {"kind":"items","data":{"id":"one","trip":"t","name":"Last bag","status":"Available","currency":"JPY","rate":105,"price":1000,"markup":20,"markupMode":"percent","selling":126000,"cost":105000,"allocation":0,"qty":1,"depositMode":"amount","depositValue":100000}}
+]'::jsonb,null,'Flex setup.');
+reset role;set role anon;set request.jwt.claim.sub='';
+select public.test_assert(jsonb_array_length(public.jastip_storefront('flex-shop')->'items')=2,'No-limit items stay listed with zero stock');
+select public.test_denied($q$select public.jastip_place_order('flex-shop','{"name":"Buyer","phone":"628123456780","address":"Jakarta Indonesia","qty":21,"itemId":"open","consent":true}')$q$,'up to 20');
+select set_config('test.flexorder',public.jastip_place_order('flex-shop','{"name":"Buyer","phone":"628123456780","address":"Jakarta Indonesia","qty":3,"itemId":"open","consent":true}')::text,false);
+select public.test_assert((current_setting('test.flexorder')::jsonb->>'deposit')::numeric=189000,'Percent down payment is computed on the server');
+select set_config('test.bagorder',public.jastip_place_order('flex-shop','{"name":"Buyer","phone":"628123456781","address":"Jakarta Indonesia","qty":1,"itemId":"one","consent":true}')::text,false);
+select public.test_assert((current_setting('test.bagorder')::jsonb->>'deposit')::numeric=100000,'Fixed down payment is per unit');
+reset role;set role authenticated;set request.jwt.claim.sub='00000000-0000-0000-0000-000000000002';
+do $$declare d jsonb;o jsonb;it jsonb;begin d:=public.jastip_load_workspace();
+ select x into it from jsonb_array_elements(d->'items') x where x->>'id'='open';
+ perform public.test_assert((it->>'qty')::int=0,'No-limit stock is never decremented');
+ select x into it from jsonb_array_elements(d->'items') x where x->>'id'='one';
+ perform public.test_assert((it->>'qty')::int=0,'Limited stock is reserved');
+ select x into o from jsonb_array_elements(d->'orders') x where x->>'id'=current_setting('test.flexorder')::jsonb->>'id';
+ perform public.test_denied(format('select public.jastip_commit(%L,%s,%L::jsonb)',current_setting('test.flex'),d->>'revision',jsonb_build_array(jsonb_build_object('kind','orders','data',o||'{"qty":2}'))::text),'cancel this order');
+ perform public.jastip_commit(current_setting('test.flex')::uuid,(d->>'revision')::bigint,jsonb_build_array(jsonb_build_object('kind','orders','data',o||'{"status":"Confirmed"}')));
+ d:=public.jastip_load_workspace();select x into o from jsonb_array_elements(d->'orders') x where x->>'id'=current_setting('test.flexorder')::jsonb->>'id';
+ perform public.test_denied(format('select public.jastip_commit(%L,%s,%L::jsonb)',current_setting('test.flex'),d->>'revision',jsonb_build_array(jsonb_build_object('kind','orders','data',o||'{"deposit":0}'))::text),'pricing is frozen');
+ perform public.test_denied(format('select public.jastip_commit(%L,%s,%L::jsonb)',current_setting('test.flex'),d->>'revision',jsonb_build_array(jsonb_build_object('kind','orders','data',o||'{"status":"Purchased","actualCost":100000}'))::text),'down payment before purchasing');
+ perform public.jastip_commit(current_setting('test.flex')::uuid,(d->>'revision')::bigint,jsonb_build_array(jsonb_build_object('kind','orders','data',o||'{"paid":189000,"payments":[{"amount":189000,"method":"Cash"}]}')));
+ d:=public.jastip_load_workspace();select x into o from jsonb_array_elements(d->'orders') x where x->>'id'=current_setting('test.flexorder')::jsonb->>'id';
+ perform public.jastip_commit(current_setting('test.flex')::uuid,(d->>'revision')::bigint,jsonb_build_array(jsonb_build_object('kind','orders','data',o||'{"status":"Purchased","actualCost":100000}')));
+ d:=public.jastip_load_workspace();select x into o from jsonb_array_elements(d->'orders') x where x->>'id'=current_setting('test.flexorder')::jsonb->>'id';
+ perform public.test_denied(format('select public.jastip_commit(%L,%s,%L::jsonb)',current_setting('test.flex'),d->>'revision',jsonb_build_array(jsonb_build_object('kind','orders','data',o||'{"status":"Shipped"}'))::text),'full payment before shipping');
+ perform public.jastip_commit(current_setting('test.flex')::uuid,(d->>'revision')::bigint,jsonb_build_array(jsonb_build_object('kind','orders','data',o||'{"paid":378000,"payments":[{"amount":189000,"method":"Cash"},{"amount":189000,"method":"Cash"}]}')));
+ d:=public.jastip_load_workspace();select x into o from jsonb_array_elements(d->'orders') x where x->>'id'=current_setting('test.flexorder')::jsonb->>'id';
+ perform public.test_assert(o->>'status'='Purchased','Late full payment keeps the purchased status');
+ perform public.jastip_commit(current_setting('test.flex')::uuid,(d->>'revision')::bigint,jsonb_build_array(jsonb_build_object('kind','orders','data',o||'{"status":"Shipped"}')));
+ d:=public.jastip_load_workspace();select x into o from jsonb_array_elements(d->'orders') x where x->>'id'=current_setting('test.bagorder')::jsonb->>'id';
+ perform public.jastip_commit(current_setting('test.flex')::uuid,(d->>'revision')::bigint,jsonb_build_array(jsonb_build_object('kind','orders','data',o||'{"status":"Cancelled"}')));
+ d:=public.jastip_load_workspace();select x into it from jsonb_array_elements(d->'items') x where x->>'id'='one';
+ perform public.test_assert((it->>'qty')::int=1,'Cancelling a limited order releases stock');
+end$$;
+reset role;
+select 'PASS: all database security/workflow, role assignment and flexible order checks.';

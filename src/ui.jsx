@@ -1,6 +1,7 @@
 import { demoMode } from './lib/supabase';
 import { LiveRevenueChart } from './charts';
 import React, { useId, useEffect, useRef } from 'react';
+import { paymentState } from './money';
 import {
   Circle,
   Image,
@@ -499,6 +500,24 @@ export function ProductArt({ item, type = item?.image || 'none', photo = 0 }) {
     </div>
   );
 }
+export function Loader({ label = 'Loading…' }) {
+  return (
+    <div className="loader" role="status" aria-live="polite">
+      <span className="loader-mark">
+        <I name="ShoppingBag" size={18} />
+      </span>
+      <span className="loader-ring" aria-hidden="true" />
+      <span className="loader-label">{label}</span>
+    </div>
+  );
+}
+export function StoreLoading() {
+  return (
+    <div className="storefront store-loading">
+      <Loader label="Opening the storefront…" />
+    </div>
+  );
+}
 export function Skeleton() {
   return (
     <div className="loading" aria-busy="true" aria-label="Loading workspace">
@@ -511,5 +530,14 @@ export function Skeleton() {
       </div>
       <div className="skeleton list" />
     </div>
+  );
+}
+export function PayBadge({ order }) {
+  const state = paymentState(order);
+  return (
+    <span className={`badge ${state.tone}`}>
+      <i />
+      {state.label}
+    </span>
   );
 }

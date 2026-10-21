@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from './lib/supabase';
 import { rpc } from './lib/supabase';
 import { useOps } from './store';
-import { Button, Field, I, Callout } from './ui';
+import { Button, Field, I, Callout, Loader } from './ui';
 export function ConnectionGate() {
   const { connection, connectionError, reload, session, signOut, navigate } = useOps();
   const [view, setView] = useState(location.hash === '#SignUp' ? 'signup' : 'signin'),
@@ -90,7 +90,7 @@ export function ConnectionGate() {
         </h1>
         <p>
           {setup
-            ? 'Add the project URL and publishable key to .env.local, then restart the app.'
+            ? 'This build has no Supabase settings. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY to the hosting environment, then redeploy.'
             : onboarding
               ? 'Start with a clean workspace. No sample customers or orders will be added.'
               : 'Your orders, trips and pricing, together in one place.'}
@@ -103,7 +103,7 @@ export function ConnectionGate() {
             </Button>
           </>
         ) : waiting ? (
-          <p role="status">Loading…</p>
+          <Loader label="Getting your workspace ready…" />
         ) : setup ? (
           <pre>VITE_SUPABASE_URL=…{'\n'}VITE_SUPABASE_PUBLISHABLE_KEY=…</pre>
         ) : (

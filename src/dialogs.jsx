@@ -5,7 +5,19 @@ import { recordId, today } from './lib/records';
 import { placePublicOrder, trackPublicOrder, inviteMember, proofUrl } from './lib/repository';
 import { rpc } from './lib/supabase';
 import { ManualInvoice } from './live-workspaces';
-import { money, margin, rates, allocate, orderProfit } from './money';
+import {
+  money,
+  margin,
+  rates,
+  allocate,
+  orderProfit,
+  isUnlimited,
+  maxOrderQty,
+  depositFor,
+  depositLabel,
+  paymentState,
+  MAX_UNLIMITED_PER_ORDER,
+} from './money';
 import {
   I,
   Button,
@@ -17,6 +29,7 @@ import {
   Callout,
   ProductArt,
   SearchField,
+  PayBadge,
   navIcons,
 } from './ui';
 async function compress(file) {
@@ -53,6 +66,9 @@ export function DetailDrawer() {
     m = data.merchants.find((m) => m.id === drawer.id),
     item = data.items.find((i) => i.id === o?.itemId);
   const close = () => setDrawer(null);
+  // "Paid" is a payment state; jastipers may purchase before the customer pays in full.
+  const fulfilment = ['Requested', 'Quoted', 'Confirmed', 'Purchased', 'Shipped', 'Delivered'],
+    step = o ? fulfilment.indexOf(o.status === 'Paid' ? 'Confirmed' : o.status) : -1;
   return (
     <Overlay onClose={close} drawer label={o ? 'Order ' + o.id : 'Merchant profile'}>
       <div className="drawer-top">
@@ -114,27 +130,25 @@ export function DetailDrawer() {
               </select>
             </div>
             <div className="status-timeline">
-              {orderStatuses
-                .filter((s) => s !== 'Cancelled')
-                .map((s, k) => (
-                  <div
-                    key={s}
-                    className={`${k <= orderStatuses.indexOf(o.status) && o.status !== 'Cancelled' ? 'passed' : ''} ${o.status === s ? 'current' : ''}`}
-                  >
-                    <i>
-                      {k < orderStatuses.indexOf(o.status) ? <I name="Check" size={10} /> : null}
-                    </i>
-                    <span>{s}</span>
-                  </div>
-                ))}
+              {fulfilment.map((s, k) => (
+                <div
+                  key={s}
+                  className={`${k <= step && o.status !== 'Cancelled' ? 'passed' : ''} ${k === step ? 'current' : ''}`}
+                >
+                  <i>{k < step ? <I name="Check" size={10} /> : null}</i>
+                  <span>{s}</span>
+                </div>
+              ))}
             </div>
           </section>
           <section className="drawer-section">
             <div className="section-title compact">
-              <h3>Payment</h3>
+              <h3>
+                Payment <PayBadge order={o} />
+              </h3>
               <Button
                 icon="Plus"
-                disabled={o.paid >= o.total}
+                disabled={o.paid >= o.total || ['Cancelled', 'Delivered'].includes(o.status)}
                 onClick={() => setDialog({ type: 'payment', order: o })}
               >
                 Record payment
@@ -155,6 +169,15 @@ export function DetailDrawer() {
                   {money(Math.max(0, o.total - o.paid))}
                 </strong>
               </div>
+              {o.deposit > 0 && (
+                <div>
+                  <span>Down payment</span>
+                  <strong className={o.paid < o.deposit ? 'amber' : ''}>
+                    {money(o.deposit)}
+                    {o.paid < o.deposit ? ' due' : ' paid'}
+                  </strong>
+                </div>
+              )}
             </div>
             {o.proof && (
               <a
@@ -207,8 +230,7 @@ export function DetailDrawer() {
               <dd>
                 {demoMode
                   ? '23–27 October 2026'
-                  : data.trips.find((t) => t.id === (o?.trip || initial?.trip))?.dates ||
-                    'Ask your merchant'}
+                  : data.trips.find((t) => t.id === o.trip)?.dates || 'Ask your merchant'}
               </dd>
             </dl>
           </section>
@@ -442,7 +464,10 @@ export function Dialog() {
     markup: priced?.markup || 20,
     markupMode: priced?.markupMode || 'percent',
     trip: initialTrip?.id || '',
-    qty: original.type === 'item' ? initial?.qty || 1 : order?.qty || 1,
+    qty: original.type === 'item' ? (initial ? (initial.qty ?? 1) : 1) : order?.qty || 1,
+    unlimited: original.type === 'item' ? isUnlimited(initial) : false,
+    depositMode: (original.type === 'item' ? initial : priced)?.depositMode || 'none',
+    depositValue: (original.type === 'item' ? initial : priced)?.depositValue || '',
     status: initial?.status || 'Available',
     store: initial?.store || '',
     category: initial?.category || 'Beauty',
@@ -452,7 +477,7 @@ export function Dialog() {
     phone: '',
     address: '',
     source: 'WhatsApp',
-    itemId: data.items[0]?.id,
+    itemId: data.items.find((i) => i.status !== 'Draft')?.id,
     amount: order ? Math.max(0, order.total - order.paid) : 0,
     paymentMethod: 'Bank transfer',
     link: '',
@@ -498,6 +523,12 @@ export function Dialog() {
       mode: f.markupMode,
       allocation,
     });
+  const depositSetting = { depositMode: f.depositMode, depositValue: f.depositValue },
+    quoteDeposit = order ? depositFor(depositSetting, calc.selling * order.qty, order.qty) : 0,
+    depositInvalid =
+      f.depositMode !== 'none' &&
+      (!(Number(f.depositValue) > 0) ||
+        (f.depositMode === 'percent' && Number(f.depositValue) > 100));
   const close = () => setDialog(null);
   const uploads = async (e) => {
     const files = [...e.target.files];
@@ -561,9 +592,17 @@ export function Dialog() {
     return true;
   };
   const createOrder = async (custom, buyer) => {
-    const i = initial || data.items.find((i) => i.id === f.itemId) || data.items[0];
-    if (buyer && !custom && (qty > i.qty || i.status === 'Draft')) {
+    const i = initial || data.items.find((i) => i.id === f.itemId);
+    if (!custom && !i) {
+      setError('Choose an item first.');
+      return;
+    }
+    if (!custom && (i.status === 'Draft' || (!isUnlimited(i) && qty > i.qty))) {
       setError(`Only ${i.qty} available. Choose a smaller quantity.`);
+      return;
+    }
+    if (buyer && !custom && qty > maxOrderQty(i)) {
+      setError(`You can order up to ${maxOrderQty(i)} of this item at a time.`);
       return;
     }
     if (buyer && !demoMode) {
@@ -611,6 +650,7 @@ export function Dialog() {
       quotedCost: custom ? 0 : i.cost,
       allocation: custom ? 0 : i.allocation,
       fxRate: custom ? null : i.rate,
+      deposit: custom ? 0 : depositFor(i, i.selling * qty, qty),
     };
     const saved = await requireSaved(
       change(
@@ -618,7 +658,7 @@ export function Dialog() {
           ...d,
           orders: [o, ...d.orders],
           items:
-            buyer && !custom
+            buyer && !custom && !isUnlimited(i)
               ? d.items.map((x) => (x.id === i.id ? { ...x, qty: x.qty - qty } : x))
               : d.items,
         }),
@@ -652,6 +692,10 @@ export function Dialog() {
           setError('Choose an open trip. Closed trips are read-only.');
           return;
         }
+        if (depositInvalid) {
+          setError('Enter a down payment above zero (up to 100%).');
+          return;
+        }
         const i = {
           ...initial,
           id: initial?.id || recordId('IT-'),
@@ -665,7 +709,10 @@ export function Dialog() {
           selling: calc.selling,
           cost: calc.purchase,
           allocation,
-          qty: Number(f.qty),
+          qty: f.unlimited ? 0 : Number(f.qty),
+          unlimited: !!f.unlimited,
+          depositMode: f.depositMode,
+          depositValue: f.depositMode === 'none' ? null : Number(f.depositValue),
           status: f.status,
           store: f.store,
           category: f.category,
@@ -687,18 +734,23 @@ export function Dialog() {
         )
           close();
       } else if (step === 'quote') {
+        if (depositInvalid) {
+          setError('Enter a down payment above zero (up to 100%).');
+          return;
+        }
         await requireSaved(
           updateOrder(order.id, {
             total: calc.selling * order.qty,
             quotedCost: calc.purchase,
             allocation,
             fxRate: rate,
+            deposit: quoteDeposit,
             status: 'Quoted',
           }),
         );
         close();
         await copy(
-          `Hi ${order.name.split(' ')[0]}, your quote for ${order.qty} × ${order.item} is ${money(calc.selling * order.qty)}. Reply to confirm. Order ${order.id}.`,
+          `Hi ${order.name.split(' ')[0]}, your quote for ${order.qty} × ${order.item} is ${money(calc.selling * order.qty)}${quoteDeposit ? `, with a ${money(quoteDeposit)} down payment to confirm` : ''}. Reply to confirm. Order ${order.id}.`,
         );
       } else if (step === 'payment') {
         const o = data.orders.find((o) => o.id === order.id);
@@ -710,7 +762,10 @@ export function Dialog() {
         await requireSaved(
           updateOrder(o.id, {
             paid,
-            status: paid >= o.total ? 'Paid' : o.status,
+            status:
+              paid >= o.total && ['Requested', 'Quoted', 'Confirmed'].includes(o.status)
+                ? 'Paid'
+                : o.status,
             proof: proof || o.proof,
             payments: [
               ...(o.payments || []),
@@ -1090,6 +1145,41 @@ export function Dialog() {
       </div>
     </>
   );
+  const depositExample =
+    step === 'quote' && order ? quoteDeposit : depositFor(depositSetting, calc.selling, 1);
+  const depositFields = (
+    <Field
+      label="Down payment"
+      hint={
+        f.depositMode === 'none'
+          ? 'Ask for a DP on pricey finds or custom requests.'
+          : `${money(depositExample)} due ${step === 'quote' ? 'on this order' : 'per item'} before you purchase.`
+      }
+    >
+      <div className="input-combo dp-combo">
+        <select
+          aria-label="Down payment type"
+          value={f.depositMode}
+          onChange={(e) => set('depositMode', e.target.value)}
+        >
+          <option value="none">No DP</option>
+          <option value="percent">% of total</option>
+          <option value="amount">IDR per item</option>
+        </select>
+        {f.depositMode !== 'none' && (
+          <input
+            type="number"
+            min="1"
+            max={f.depositMode === 'percent' ? 100 : undefined}
+            required
+            aria-label="Down payment value"
+            value={f.depositValue}
+            onChange={(e) => set('depositValue', e.target.value)}
+          />
+        )}
+      </div>
+    </Field>
+  );
   return (
     <Overlay onClose={close} title="dialog-title">
       <div className={`dialog-content ${step === 'item' ? 'capture-dialog' : ''}`}>
@@ -1174,6 +1264,7 @@ export function Dialog() {
                   </Field>
                   {tripSelect}
                   {pricing}
+                  {step === 'quote' && depositFields}
                   {step === 'item' && (
                     <>
                       <div className="form-grid">
@@ -1184,17 +1275,40 @@ export function Dialog() {
                             <option>Draft</option>
                           </select>
                         </Field>
-                        <Field label="Quantity">
-                          <input
-                            type="number"
-                            min="1"
-                            max="10000"
-                            required
-                            value={f.qty}
-                            onChange={(e) => set('qty', e.target.value)}
-                          />
+                        <Field
+                          label="Quantity"
+                          hint={
+                            f.unlimited
+                              ? `Buyers can order up to ${MAX_UNLIMITED_PER_ORDER} at a time.`
+                              : undefined
+                          }
+                        >
+                          {f.unlimited ? (
+                            <input value="No limit" disabled aria-label="Quantity" />
+                          ) : (
+                            <input
+                              type="number"
+                              min="0"
+                              max="10000"
+                              required
+                              value={f.qty}
+                              onChange={(e) => set('qty', e.target.value)}
+                            />
+                          )}
                         </Field>
                       </div>
+                      <label className="check-row">
+                        <input
+                          type="checkbox"
+                          checked={f.unlimited}
+                          onChange={(e) => set('unlimited', e.target.checked)}
+                        />
+                        <span>
+                          No quantity limit
+                          <small>For finds you can buy as many as customers order.</small>
+                        </span>
+                      </label>
+                      {depositFields}
                       <div className="form-grid">
                         <Field label="Store name">
                           <input
@@ -1262,7 +1376,20 @@ export function Dialog() {
                       <dt>Trip</dt>
                       <dd>{data.trips.find((t) => t.id === initial.trip)?.name}</dd>
                       <dt>Available</dt>
-                      <dd>{initial.qty} items</dd>
+                      <dd>
+                        {isUnlimited(initial)
+                          ? `Ready to order · up to ${MAX_UNLIMITED_PER_ORDER} per order`
+                          : `${initial.qty} items`}
+                      </dd>
+                      {depositLabel(initial) && (
+                        <>
+                          <dt>Down payment</dt>
+                          <dd>
+                            {money(depositFor(initial, initial.selling * qty, qty))} to confirm your
+                            order
+                          </dd>
+                        </>
+                      )}
                       <dt>Delivery</dt>
                       <dd>
                         {demoMode
@@ -1277,7 +1404,7 @@ export function Dialog() {
                       <input
                         type="number"
                         min="1"
-                        max={initial.qty}
+                        max={maxOrderQty(initial)}
                         value={f.qty}
                         onChange={(e) => set('qty', e.target.value)}
                       />
@@ -1296,6 +1423,11 @@ export function Dialog() {
                       {qty} × {money(initial.selling)}
                     </span>
                     <strong>{money(initial.selling * qty)}</strong>
+                    {depositFor(initial, initial.selling * qty, qty) > 0 && (
+                      <small>
+                        Down payment {money(depositFor(initial, initial.selling * qty, qty))}
+                      </small>
+                    )}
                   </div>
                 ) : (
                   <>
@@ -1441,8 +1573,14 @@ export function Dialog() {
                 <Field label="Payment proof (optional)">
                   <input type="file" accept="image/*" onChange={receipt} />
                 </Field>
+                {order.deposit > 0 && order.paid < order.deposit && (
+                  <Callout icon="Info">
+                    Down payment due: {money(order.deposit - order.paid)} before purchasing.
+                  </Callout>
+                )}
                 <p className="footnote">
-                  Partial payments are welcome. Fully paid orders move to Paid automatically.
+                  Partial payments are welcome. Confirmed orders that are fully paid move to Paid;
+                  purchased orders keep their status.
                 </p>
               </>
             )}
@@ -1452,7 +1590,7 @@ export function Dialog() {
                   {order.qty} × {order.item}
                 </p>
                 <div className="form-grid">
-                  <Field label="Actual purchase cost per item (IDR)">
+                  <Field label="Actual purchase cost per item">
                     <input
                       type="number"
                       min="0"
@@ -1695,6 +1833,11 @@ export function Dialog() {
                     ? `Thanks, ${tracking.name.split(' ')[0]}. Your find is reserved.`
                     : 'Your merchant will take a look on the next trip.'}
                 </h3>
+                {step === 'confirmation' && Number(tracking.deposit) > 0 && (
+                  <Callout icon="Wallet">
+                    Down payment: {money(tracking.deposit)} to confirm this order.
+                  </Callout>
+                )}
                 <p>
                   {step === 'confirmation'
                     ? 'Your merchant will reach out on WhatsApp to confirm availability and payment.'
@@ -1913,8 +2056,8 @@ export function Dialog() {
                 type="button"
                 icon="ShoppingBag"
                 onClick={() => {
-                  if (qty > initial.qty || Number(f.qty) < 1) {
-                    setError(`Choose between 1 and ${initial.qty} items.`);
+                  if (qty > maxOrderQty(initial) || Number(f.qty) < 1) {
+                    setError(`Choose between 1 and ${maxOrderQty(initial)} items.`);
                     return;
                   }
                   setStep('order');

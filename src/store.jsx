@@ -29,15 +29,18 @@ export function Provider({ children, initialSeed }) {
       demoMode ? 'ready' : supabase ? 'loading' : 'unconfigured',
     ),
     [connectionError, setConnectionError] = useState(''),
-    [pending, setPending] = useState(false);
+    [pending, setPending] = useState(false),
+    [pageLoading, setPageLoading] = useState(false);
   const dataRef = useRef(data),
     supportRef = useRef(support),
     busyRef = useRef(false),
     generation = useRef(0),
     activeWorkspace = useRef(null),
     timer = useRef(),
-    chord = useRef(0);
+    chord = useRef(0),
+    connectionRef = useRef(connection);
   dataRef.current = data;
+  connectionRef.current = connection;
   supportRef.current = support;
   const mode =
     page === 'Storefront'
@@ -59,15 +62,21 @@ export function Provider({ children, initialSeed }) {
     dataRef.current = { ...value, preferences };
     if (!demoMode) setRole(value.role || 'Owner');
   }
-  async function reload() {
+  // Quiet reloads (menu navigation, Refresh) keep the app on screen and show a page loader
+  // instead of returning to the full-screen connection gate.
+  async function reload({ quiet = false } = {}) {
     if (demoMode) return;
     const request = ++generation.current;
     if (!supabase) {
       setConnection('unconfigured');
       return;
     }
-    setConnection('loading');
-    setConnectionError('');
+    const soft = quiet && connectionRef.current === 'ready';
+    if (soft) setPageLoading(true);
+    else {
+      setConnection('loading');
+      setConnectionError('');
+    }
     try {
       const {
         data: { session: s },
@@ -115,8 +124,13 @@ export function Provider({ children, initialSeed }) {
       setConnection('ready');
     } catch (e) {
       if (request !== generation.current) return;
-      setConnectionError(e.message);
-      setConnection('error');
+      if (soft) announce(e.message);
+      else {
+        setConnectionError(e.message);
+        setConnection('error');
+      }
+    } finally {
+      if (request === generation.current) setPageLoading(false);
     }
   }
   async function signOut() {
@@ -254,6 +268,10 @@ export function Provider({ children, initialSeed }) {
     }
   };
   const navigate = (p) => {
+    try {
+      if (p === 'Storefront') sessionStorage.setItem('jo-store-preview', '1');
+      else sessionStorage.removeItem('jo-store-preview');
+    } catch {}
     setPage(p);
     location.hash = p === 'Storefront' && !demoMode ? 'Storefront/' + dataRef.current.shop.slug : p;
     setDrawer(null);
@@ -312,7 +330,7 @@ export function Provider({ children, initialSeed }) {
       setDrawer(null);
       setDialog(null);
       setMobile(false);
-      if (!demoMode) reload();
+      if (!demoMode) reload({ quiet: true });
     };
     window.addEventListener('hashchange', hash);
     return () => window.removeEventListener('hashchange', hash);
@@ -386,6 +404,18 @@ export function Provider({ children, initialSeed }) {
     const o = dataRef.current.orders.find((o) => o.id === id);
     if (!o) return false;
     if (patch.status === 'Paid' && (patch.paid ?? o.paid) < o.total) {
+      setDialog({ type: 'payment', order: o });
+      return false;
+    }
+    const paid = patch.paid ?? o.paid,
+      deposit = patch.deposit ?? o.deposit ?? 0;
+    if (['Shipped', 'Delivered'].includes(patch.status) && paid < o.total) {
+      announce('Record the full payment before shipping.');
+      setDialog({ type: 'payment', order: o });
+      return false;
+    }
+    if (patch.status === 'Purchased' && paid < deposit) {
+      announce('Collect the down payment before purchasing.');
       setDialog({ type: 'payment', order: o });
       return false;
     }
@@ -481,6 +511,7 @@ export function Provider({ children, initialSeed }) {
         connection,
         connectionError,
         reload,
+        pageLoading,
         session,
         signOut,
         pending,

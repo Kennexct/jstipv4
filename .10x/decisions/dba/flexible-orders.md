@@ -1,0 +1,2 @@
+# DBA — flexible-orders (2026-10-21)
+Migration `supabase/migrations/202610210001_flexible_orders.sql`: additive, transactional, replaces `jastip.validate_record`, `jastip_commit`, `jastip_storefront`, `jastip_place_order`; adds `jastip.is_unlimited(jsonb)` and `jastip.deposit_for(jsonb,numeric,int)` (no grants). No table, index, RLS or data changes. Apply in Supabase SQL Editor **before** deploying the frontend.

@@ -62,7 +62,7 @@ test('paid order captures actual purchase cost, reaches delivery and public trac
   await page.goto('/#Purchasing');
   const row = page.locator('.purchase-row').filter({ hasText: 'Sinta' });
   await row.getByRole('checkbox').click();
-  await page.getByLabel('Actual purchase cost per item (IDR)').fill('100000');
+  await page.getByLabel('Actual purchase cost per item').fill('100000');
   await page.getByRole('button', { name: 'Mark as purchased' }).click();
   await page.goto('/#Orders');
   await page.getByText('Sinta Maharani', { exact: true }).click();
@@ -118,4 +118,44 @@ test('appearance settings persist and read-only support prevents mutations', asy
     ),
   );
   expect(found).toBe(false);
+});
+test('storefront highlights trips and has no workspace bar for customers', async ({ page }) => {
+  await page.goto('/#Storefront');
+  const trips = page.getByRole('region', { name: 'Current trips' });
+  await expect(trips.getByText('Tokyo autumn trip')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Tokyo autumn trip' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Back to workspace' })).toHaveCount(0);
+  await trips.getByRole('button', { name: /Tokyo autumn trip/ }).click();
+  await expect(trips.getByRole('button', { name: /Tokyo autumn trip/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+});
+test('confirmed orders can be bought before full payment and recapped', async ({ page }) => {
+  await page.goto('/#Purchasing');
+  const row = page.locator('.purchase-row').filter({ hasText: 'Aditya' });
+  await expect(row.getByText('Confirmed', { exact: true })).toBeVisible();
+  await row.getByRole('checkbox').click();
+  await page.getByLabel('Actual purchase cost per item').fill('90000');
+  await page.getByRole('button', { name: 'Mark as purchased' }).click();
+  await expect(row.getByText('Purchased', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Recap by item', exact: true }).click();
+  await expect(page.locator('table')).toContainText('Matcha ceremonial blend');
+});
+test('items without a quantity limit and with a down payment reach the storefront', async ({
+  page,
+}) => {
+  await page.goto('/#Items');
+  await page.getByRole('button', { name: 'Add item', exact: true }).click();
+  await page.getByLabel('Item name').fill('Endless KitKat box');
+  await page.getByLabel('No quantity limit').check();
+  await page.getByLabel('Down payment type').selectOption('percent');
+  await page.getByLabel('Down payment value').fill('50');
+  await page.getByRole('button', { name: 'Post item' }).click();
+  await page.goto('/#Storefront');
+  const card = page.locator('.store-product').filter({ hasText: 'Endless KitKat box' });
+  await expect(card).toContainText('Ready to order');
+  await expect(card).toContainText('DP 50%');
+  await card.click();
+  await expect(page.getByRole('dialog')).toContainText('up to 20 per order');
 });
