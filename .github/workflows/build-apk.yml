@@ -39,8 +39,24 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      # Vite bakes these into the app at build time. Without them the APK opens on
+      # "Connect Supabase". Set them in GitHub → Settings → Secrets and variables → Actions.
       - name: Build Web Application (Vite)
-        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+          VITE_PUBLIC_APP_URL: ${{ secrets.VITE_PUBLIC_APP_URL }}
+          VITE_ENABLE_DEMO: 'false'
+        run: |
+          missing=""
+          for v in VITE_SUPABASE_URL VITE_SUPABASE_PUBLISHABLE_KEY VITE_PUBLIC_APP_URL; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing GitHub Actions secrets:$missing. Add them in Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          npm run build
 
       - name: Initialize Capacitor Android
         run: npx cap add android || true
