@@ -107,7 +107,17 @@ test('clean workspace, trip/item capture, public order, payments, purchase, trac
   await page.goto('/#Orders');
   await page.getByText('Actual Buyer', { exact: true }).click();
   await page.getByLabel('Update order status').selectOption('Shipped');
+  // Shipping goes through jastip_ship_orders with courier and resi (ADR-008).
+  const shipDialog = page.getByRole('dialog', { name: 'Mark as shipped' });
+  await shipDialog.getByLabel('Courier').selectOption('SiCepat');
+  await shipDialog.getByLabel(/Resi for/).fill('sc000123456');
+  await shipDialog.getByRole('button', { name: 'Mark shipped' }).click();
+  await page
+    .getByRole('dialog', { name: 'Order shipped' })
+    .getByRole('button', { name: 'Done' })
+    .click();
   await expect(page.getByLabel('Update order status')).toHaveValue('Shipped');
+  await expect(page.locator('.details-list')).toContainText('SiCepat · SC000123456');
   await page.getByLabel('Update order status').selectOption('Delivered');
   await expect(page.getByLabel('Update order status')).toHaveValue('Delivered');
   await buyer.getByRole('button', { name: 'Keep browsing' }).click();
@@ -116,6 +126,24 @@ test('clean workspace, trip/item capture, public order, payments, purchase, trac
   await buyer.getByRole('button', { name: 'Track order', exact: true }).last().click();
   await expect(buyer.getByRole('dialog').getByText('Delivered', { exact: true })).toBeVisible();
   await expect(buyer.getByRole('dialog')).not.toContainText('Actual Buyer');
+  // The tracking link in the seller's message opens straight to the courier and resi.
+  const linked = await browser.newPage();
+  await linked.goto('/#Storefront/actual-shop/track/' + token);
+  await expect(linked.getByRole('dialog').locator('.tracking-shipment')).toContainText(
+    'SC000123456',
+  );
+  await expect(linked.getByRole('dialog')).not.toContainText('Actual Buyer');
+  await linked.close();
+  // Message templates persist in PostgreSQL and feed the copy buttons.
+  await page.goto('/#Settings');
+  await page.getByRole('button', { name: 'Messages', exact: true }).click();
+  await page.getByLabel('Bank', { exact: true }).fill('Mandiri');
+  await page.getByLabel('Account number').fill('900-00-1234');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Message templates saved.')).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: 'Messages', exact: true }).click();
+  await expect(page.getByLabel('Account number')).toHaveValue('900-00-1234');
   // No stock limit + 50% down payment; jastiper buys after the DP, ships after full payment.
   await page.goto('/#Items');
   await page.getByRole('button', { name: 'Add item', exact: true }).first().click();
@@ -171,6 +199,18 @@ test('clean workspace, trip/item capture, public order, payments, purchase, trac
   ).toBeVisible();
   await expect(page.getByLabel('Update order status')).toHaveValue('Purchased');
   await page.getByLabel('Update order status').selectOption('Shipped');
+  await page
+    .getByRole('dialog', { name: 'Mark as shipped' })
+    .getByLabel('Courier')
+    .selectOption('Pickup');
+  await page
+    .getByRole('dialog', { name: 'Mark as shipped' })
+    .getByRole('button', { name: 'Mark shipped' })
+    .click();
+  await page
+    .getByRole('dialog', { name: 'Order shipped' })
+    .getByRole('button', { name: 'Done' })
+    .click();
   await expect(page.getByLabel('Update order status')).toHaveValue('Shipped');
   await page.getByRole('button', { name: 'Close detail' }).click();
   await page.goto('/#Items');

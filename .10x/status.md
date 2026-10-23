@@ -42,3 +42,8 @@ Review items still open: APK env secrets, public app URL for links in APK, per-r
 - Spec `.10x/specs/2026-10-23-landing-and-support-chat-design.md` approved by Kenny 13:39. Phases 1–3 written (cto, pm, architect, staff, em, senior). Implementation in progress.
 - 2026-10-23 phases 4–6 done locally on branch `feature/landing-and-support-chat`: unit 13/13, build, db PASS (2 files), e2e 19/19, integration 4/4. Landing at `/` (signed out) and `#Home`; chat bottom-right; admin Inbox.
 - Needs Kenny: apply migration 202610220001 in Supabase → push/merge → CI green → smoke test on Vercel (reviews/2026-10-23-landing-qa-report.md).
+
+## 2026-10-23 sprint-1-daily-ops (ADR-008, Accepted)
+- Plan of record: the doc "Bawa from a jastiper's seat" → Delivery plan (4 sprints, 26 Oct – 18 Dec). Kenny's answers: no `wa.me` (Open in WhatsApp dropped), refunds on the same ledger, interviews confirmed.
+- Branch `feature/sprint-1-daily-ops`, stacked on `feature/landing-and-support-chat`. Phases 1–3 written.
+- 2026-10-23 sprint 1 built (phases 4–6) on `feature/sprint-1-daily-ops`: unit 19/19, db 3/3, e2e 23/23, integration 4/4. Tracker items set to In review. Needs Kenny: apply migrations 202610220001 + 202610230001, then the patches, then smoke test (reviews/2026-10-23-sprint-1-qa-report.md). Next: sprint 2 (9–20 Nov) — out of stock/substitute, buyer refunds on the same ledger, ongkir, needs-me-today, deadline on cards.

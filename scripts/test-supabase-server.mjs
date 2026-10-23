@@ -31,9 +31,12 @@ const args = {
   jastip_admin_chat: ['p_thread'],
   jastip_admin_chat_reply: ['p_thread', 'p_body'],
   jastip_admin_chat_status: ['p_thread', 'p_status'],
+  jastip_messaging: ['p_workspace'],
+  jastip_save_messaging: ['p_workspace', 'p_value'],
+  jastip_ship_orders: ['p_workspace', 'p_revision', 'p_shipments'],
 };
 const emails = [];
-const jsonArgs = new Set(['p_changes', 'p_shop', 'p_order', 'p_value']);
+const jsonArgs = new Set(['p_changes', 'p_shop', 'p_order', 'p_value', 'p_shipments']);
 const quote = (v) => "'" + String(v).replaceAll("'", "''") + "'";
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');

@@ -14,3 +14,9 @@ Read the spec + ADR-007. The task order is in `decisions/engineering-manager/lan
 
 ## 2026-10-23 — landing-and-support-chat built (to Kenny / DevOps)
 Branch `feature/landing-and-support-chat`. Deploy order in `decisions/devops/landing-and-support-chat.md`. The migration must run before the chat works. Smoke checklist in `reviews/2026-10-23-landing-qa-report.md`. Follow-ups: privacy-policy line for chat contacts; owner alerts for new chats (not built).
+
+## 2026-10-23 — sprint-1-daily-ops (to SDE)
+Spec `specs/2026-10-23-sprint-1-daily-ops-design.md`, ADR-008, task order in `decisions/engineering-manager/sprint-1-daily-ops.md`. New migration `202610230001_sprint1_messages_shipping.sql`.
+
+## 2026-10-23 — sprint 1 built (to Kenny / DevOps, then sprint 2 PM)
+Deploy order in `decisions/devops/sprint-1-daily-ops.md`. Sprint 2 starts with a spec for out-of-stock/substitute plus buyer refunds on the existing payment ledger (Kenny: same ledger).

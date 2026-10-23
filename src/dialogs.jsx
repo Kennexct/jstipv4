@@ -8,10 +8,12 @@ import {
   inviteMember,
   sendInviteEmail,
   proofUrl,
+  appBase,
 } from './lib/repository';
 import { supabase } from './lib/supabase';
 import { rpc } from './lib/supabase';
 import { ManualInvoice } from './live-workspaces';
+import { orderMessage, trackingLink } from './lib/messages';
 import {
   money,
   margin,
@@ -82,6 +84,7 @@ export function DetailDrawer() {
     demoMode,
     openSupport,
     announce,
+    messaging,
   } = useOps();
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const o = data.orders.find((o) => o.id === drawer.id),
@@ -249,6 +252,24 @@ export function DetailDrawer() {
               <dd>+{o.phone}</dd>
               <dt>Address</dt>
               <dd>{o.address}</dd>
+              {o.courier && (
+                <>
+                  <dt>Shipped with</dt>
+                  <dd>
+                    {o.courier}
+                    {o.resi ? ' · ' : ''}
+                    {o.resi && <span className="mono">{o.resi}</span>}{' '}
+                    {o.status === 'Shipped' && (
+                      <button
+                        className="text-btn"
+                        onClick={() => setDialog({ type: 'ship', ids: [o.id] })}
+                      >
+                        Edit
+                      </button>
+                    )}
+                  </dd>
+                </>
+              )}
               <dt>Delivery window</dt>
               <dd>
                 {demoMode
@@ -260,37 +281,35 @@ export function DetailDrawer() {
           <section className="drawer-section">
             <h3>Keep your customer in the loop</h3>
             <div className="message-actions">
-              <Button
-                icon="Copy"
-                onClick={() =>
-                  copy(
-                    `Hi ${o.name.split(' ')[0]}, your quote for ${o.qty} × ${o.item} is ${money(o.total, false, cur)}. Reply to confirm. Order ${o.id}.`,
-                  )
-                }
-              >
-                Copy quote
-              </Button>
-              <Button
-                icon="Copy"
-                onClick={() =>
-                  copy(
-                    `Hi ${o.name.split(' ')[0]}, a friendly reminder: ${money(Math.max(0, o.total - o.paid), false, cur)} is outstanding for ${o.id}. Thank you.`,
-                  )
-                }
-              >
-                Payment reminder
-              </Button>
-              <Button
-                icon="Copy"
-                onClick={() =>
-                  copy(
-                    `Hi ${o.name.split(' ')[0]}, your order ${o.id} is now ${o.status.toLowerCase()}. We’ll keep you updated.`,
-                  )
-                }
-              >
-                Status update
-              </Button>
+              {[
+                ['quote', 'Copy quote'],
+                ['reminder', 'Payment reminder'],
+                ['status', 'Status update'],
+                ...(['Shipped', 'Delivered'].includes(o.status)
+                  ? [['shipped', 'Shipped message']]
+                  : []),
+              ].map(([kind, label]) => (
+                <Button
+                  key={kind}
+                  icon="Copy"
+                  onClick={() =>
+                    copy(
+                      orderMessage(kind, o, {
+                        messaging,
+                        currency: cur,
+                        trackingLink: trackingLink(appBase(), data.shop.slug, o),
+                      }),
+                      label,
+                    )
+                  }
+                >
+                  {label}
+                </Button>
+              ))}
             </div>
+            <p className="footnote">
+              Uses your templates from Settings → Messages. Paste into the buyer’s chat to send.
+            </p>
           </section>
           <div className="drawer-bottom">
             <small>Changes are saved automatically</small>
@@ -521,14 +540,26 @@ export function Dialog() {
     budget: demoMode ? 6500000 : 0,
     units: 100,
     consent: false,
-    code: '',
+    code: original.code || '',
     memberRole: 'Helper',
     password: '',
     inviteEmail: original.member?.email || '',
   });
   const set = (k, v) => setF((prev) => ({ ...prev, [k]: v }));
+  // Tracking links (#Storefront/<slug>/track/<token>) open straight to the result.
+  useEffect(() => {
+    if (original.type !== 'track' || !original.code) return;
+    const lookup = demoMode
+      ? Promise.resolve(
+          data.orders.find((o) => o.id.toLowerCase() === original.code.toLowerCase()) ||
+            Promise.reject(Error('We couldn’t find that order.')),
+        )
+      : trackPublicOrder(original.code);
+    lookup.then(setTracking).catch((e) => setError(e.message));
+  }, []);
   const initialForm = useRef(JSON.stringify(f)),
     submitting = useRef(false),
+    addAnother = useRef(false),
     editedRecord = useRef(
       original.type === 'item' && original.item
         ? { kind: 'items', record: original.item }
@@ -828,8 +859,23 @@ export function Dialog() {
               `${i.name} ${initial ? 'updated' : f.status === 'Draft' ? 'saved as a draft' : 'posted to ' + t.name}.`,
             ),
           )
-        )
-          close();
+        ) {
+          if (addAnother.current && !initial) {
+            // Keep trip, currency, markup, DP, store and category for the next find.
+            const next = {
+              ...f,
+              name: '',
+              price: '',
+              qty: 1,
+              note: '',
+              deadline: f.deadline,
+            };
+            setF(next);
+            setPhotos([]);
+            initialForm.current = JSON.stringify(next);
+            setTimeout(() => document.querySelector('[data-item-name]')?.focus(), 0);
+          } else close();
+        }
       } else if (step === 'quote') {
         if (depositInvalid) {
           setError('Enter a down payment above zero (up to 100%).');
@@ -1393,6 +1439,7 @@ export function Dialog() {
                       required
                       value={f.name}
                       onChange={(e) => set('name', e.target.value)}
+                      data-item-name
                       placeholder="What did you find?"
                     />
                   </Field>
@@ -1951,6 +1998,39 @@ export function Dialog() {
                     <span className="mono">{tracking.id}</span>
                     <h3>Your order is {tracking.status.toLowerCase()}</h3>
                     <Badge status={tracking.status} />
+                    {tracking.courier ? (
+                      <dl className="tracking-shipment">
+                        <dt>Courier</dt>
+                        <dd>{tracking.courier}</dd>
+                        {tracking.resi && (
+                          <>
+                            <dt>Resi</dt>
+                            <dd>
+                              <span className="mono">{tracking.resi}</span>{' '}
+                              <button
+                                type="button"
+                                className="text-btn"
+                                onClick={() => copy(tracking.resi, 'Resi')}
+                              >
+                                <I name="Copy" size={13} /> Copy
+                              </button>
+                            </dd>
+                          </>
+                        )}
+                        {tracking.shippedAt && (
+                          <>
+                            <dt>Shipped</dt>
+                            <dd>
+                              {new Date(tracking.shippedAt).toLocaleDateString('en-GB', {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric',
+                              })}
+                            </dd>
+                          </>
+                        )}
+                      </dl>
+                    ) : null}
                     <p>Contact the merchant for delivery details or changes.</p>
                     <button type="button" className="text-btn" onClick={() => setTracking(null)}>
                       Look up another order
@@ -2271,54 +2351,69 @@ export function Dialog() {
                 {step.includes('confirmation') ? 'Keep browsing' : 'Done'}
               </Button>
             ) : step === 'track' && tracking ? null : (
-              <Button
-                primary
-                type="submit"
-                disabled={busy || pending}
-                icon={step === 'quote' ? 'Copy' : step === 'item' ? 'ArrowUpRight' : undefined}
-              >
-                {busy
-                  ? 'Reading photo…'
-                  : step === 'item'
-                    ? initial
-                      ? 'Save item'
-                      : f.status === 'Draft'
-                        ? 'Save draft'
-                        : 'Post item'
-                    : step === 'quote'
-                      ? 'Save & copy quote'
-                      : step === 'order'
-                        ? 'Place order'
-                        : step === 'payment'
-                          ? 'Record payment'
-                          : step === 'purchase'
-                            ? 'Mark as purchased'
-                            : step === 'trip'
-                              ? 'Create trip'
-                              : step === 'track'
-                                ? 'Track order'
-                                : step === 'plan'
-                                  ? demoMode
-                                    ? 'Activate demo plan'
-                                    : 'Request plan'
-                                  : step === 'reset'
-                                    ? 'Reset demo'
-                                    : step === 'suspend'
-                                      ? 'Suspend merchant'
-                                      : ['request', 'buyer-request'].includes(step)
-                                        ? 'Send request'
-                                        : step === 'invite'
-                                          ? demoMode
-                                            ? 'Save invitation'
-                                            : 'Send invitation'
-                                          : step === 'invite-merchant'
-                                            ? 'Save invitation'
-                                            : step === 'set-password'
-                                              ? 'Save password'
-                                              : step === 'edit-invite'
-                                                ? 'Save and resend'
-                                                : 'Save'}
-              </Button>
+              <>
+                {step === 'item' && !initial && (
+                  <Button
+                    type="button"
+                    disabled={busy || pending}
+                    onClick={(e) => {
+                      addAnother.current = true;
+                      e.currentTarget.form?.requestSubmit();
+                    }}
+                  >
+                    Post and add another
+                  </Button>
+                )}
+                <Button
+                  primary
+                  onClick={() => (addAnother.current = false)}
+                  type="submit"
+                  disabled={busy || pending}
+                  icon={step === 'quote' ? 'Copy' : step === 'item' ? 'ArrowUpRight' : undefined}
+                >
+                  {busy
+                    ? 'Reading photo…'
+                    : step === 'item'
+                      ? initial
+                        ? 'Save item'
+                        : f.status === 'Draft'
+                          ? 'Save draft'
+                          : 'Post item'
+                      : step === 'quote'
+                        ? 'Save & copy quote'
+                        : step === 'order'
+                          ? 'Place order'
+                          : step === 'payment'
+                            ? 'Record payment'
+                            : step === 'purchase'
+                              ? 'Mark as purchased'
+                              : step === 'trip'
+                                ? 'Create trip'
+                                : step === 'track'
+                                  ? 'Track order'
+                                  : step === 'plan'
+                                    ? demoMode
+                                      ? 'Activate demo plan'
+                                      : 'Request plan'
+                                    : step === 'reset'
+                                      ? 'Reset demo'
+                                      : step === 'suspend'
+                                        ? 'Suspend merchant'
+                                        : ['request', 'buyer-request'].includes(step)
+                                          ? 'Send request'
+                                          : step === 'invite'
+                                            ? demoMode
+                                              ? 'Save invitation'
+                                              : 'Send invitation'
+                                            : step === 'invite-merchant'
+                                              ? 'Save invitation'
+                                              : step === 'set-password'
+                                                ? 'Save password'
+                                                : step === 'edit-invite'
+                                                  ? 'Save and resend'
+                                                  : 'Save'}
+                </Button>
+              </>
             )}
           </div>
         </form>

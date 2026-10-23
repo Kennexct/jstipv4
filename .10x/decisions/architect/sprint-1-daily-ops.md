@@ -1,0 +1,11 @@
+# Architect — sprint-1-daily-ops (2026-10-23) · ADR-008
+- `workspace_settings` table plus 2 RPCs for templates; `jastip_ship_orders` for shipments; `jastip_track_order` replaced (additive fields only).
+- **Client:**
+  - `src/lib/messages.js`: pure template rendering, defaults, placeholders; unit-tested.
+  - `useMessaging()` loads the settings once per workspace.
+  - Demo mode stores them in the demo state.
+- **Tracking deep link:** `#Storefront/<slug>/track/<token>`. The Storefront reads the third and fourth hash segments and opens the track step with the token.
+- **Failure modes:**
+  - Migration missing: Settings → Messages shows a callout, and the copies fall back to the defaults.
+  - Stale revision on ship: the usual "Another user changed…".
+  - A partly eligible bulk selection: skipped orders are listed.

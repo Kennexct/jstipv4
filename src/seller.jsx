@@ -50,7 +50,7 @@ export function useViewCurrency() {
 export function OrdersTable({ orders, compact = false, selected = [], onSelect }) {
   const { setDrawer, demoMode, data } = useOps();
   return (
-    <div className="table-wrap">
+    <div className="table-wrap orders-table">
       <table>
         <thead>
           <tr>
@@ -60,15 +60,7 @@ export function OrdersTable({ orders, compact = false, selected = [], onSelect }
                   type="checkbox"
                   aria-label="Select all orders"
                   checked={orders.length > 0 && orders.every((o) => selected.includes(o.id))}
-                  onChange={(e) =>
-                    onSelect(
-                      e.target.checked
-                        ? orders
-                            .filter((o) => demoMode || ['Requested', 'Quoted'].includes(o.status))
-                            .map((o) => o.id)
-                        : [],
-                    )
-                  }
+                  onChange={(e) => onSelect(e.target.checked ? orders.map((o) => o.id) : [])}
                 />
               </th>
             )}
@@ -89,11 +81,10 @@ export function OrdersTable({ orders, compact = false, selected = [], onSelect }
               onKeyDown={(e) => e.key === 'Enter' && setDrawer({ type: 'order', id: o.id })}
             >
               {onSelect && (
-                <td onClick={(e) => e.stopPropagation()}>
+                <td className="o-check" onClick={(e) => e.stopPropagation()}>
                   <input
                     type="checkbox"
                     aria-label={'Select ' + o.id}
-                    disabled={!demoMode && !['Requested', 'Quoted'].includes(o.status)}
                     checked={selected.includes(o.id)}
                     onChange={(e) =>
                       onSelect(
@@ -105,7 +96,7 @@ export function OrdersTable({ orders, compact = false, selected = [], onSelect }
                   />
                 </td>
               )}
-              <td>
+              <td className="o-cust">
                 <div className="customer-cell">
                   <Avatar name={o.name} small />
                   <div>
@@ -114,17 +105,17 @@ export function OrdersTable({ orders, compact = false, selected = [], onSelect }
                   </div>
                 </div>
               </td>
-              <td>
+              <td className="o-item">
                 <span className="item-title">{o.item}</span>
                 <small>
                   {o.qty} {o.qty === 1 ? 'item' : 'items'} · {o.date}
                 </small>
               </td>
-              <td>
+              <td className="o-status">
                 <Badge status={o.status} />
               </td>
-              {!compact && <td className="muted">{o.source}</td>}
-              <td className="num">
+              {!compact && <td className="muted o-source">{o.source}</td>}
+              <td className="num o-amount">
                 {money(o.total, false, currencyOf(o, data.trips))}
                 <small className={o.paid < o.total ? 'amber' : ''}>
                   {o.paid === o.total
@@ -134,7 +125,7 @@ export function OrdersTable({ orders, compact = false, selected = [], onSelect }
                       : 'Awaiting payment'}
                 </small>
               </td>
-              <td>
+              <td className="o-go">
                 <I name="ChevronRight" size={14} />
               </td>
             </tr>
@@ -337,6 +328,7 @@ export function Orders() {
     setDialog,
     change,
     exportCsv,
+    announce,
   } = useOps();
   const [status, setStatus] = useState('All'),
     [q, setQ] = useState(''),
@@ -386,6 +378,13 @@ export function Orders() {
           {selected.length} selected
           <Button
             onClick={() => {
+              const eligible = orders.filter(
+                (o) => selected.includes(o.id) && ['Requested', 'Quoted'].includes(o.status),
+              ).length;
+              if (!eligible) {
+                announce('Only requested or quoted orders can be confirmed.');
+                return;
+              }
               change(
                 (d) => ({
                   ...d,
@@ -395,12 +394,29 @@ export function Orders() {
                       : o,
                   ),
                 }),
-                'Selected orders confirmed.',
+                `${eligible} ${eligible === 1 ? 'order' : 'orders'} confirmed.`,
               );
               setSelected([]);
             }}
           >
             Confirm orders
+          </Button>
+          <Button icon="Copy" onClick={() => setDialog({ type: 'reminders', ids: selected })}>
+            Copy reminders
+          </Button>
+          <Button icon="Send" onClick={() => setDialog({ type: 'ship', ids: selected })}>
+            Mark shipped
+          </Button>
+          <Button
+            icon="Download"
+            onClick={() =>
+              exportCsv(
+                orders.filter((o) => selected.includes(o.id)),
+                'orders-selected',
+              )
+            }
+          >
+            Export
           </Button>
           <Button onClick={() => setSelected([])}>Clear</Button>
         </div>
@@ -1072,7 +1088,7 @@ export function Purchasing() {
                       {o.item}
                     </strong>
                     <small>
-                      {o.qty} × · {o.name} · {o.id}
+                      Qty {o.qty} · {o.name} · {o.id}
                     </small>
                   </div>
                   <span className="muted">

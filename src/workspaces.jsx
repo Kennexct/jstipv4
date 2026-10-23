@@ -4,6 +4,7 @@ import { money, isUnlimited, stockLabel, depositLabel, currencyOf, currencyNames
 import { planDetails, accentOptions } from './data';
 import { LiveBilling, LiveAdminSummary } from './live-workspaces';
 import { AdminInbox } from './admin-inbox';
+import { MessagesSettings } from './messages-settings';
 import { rpc } from './lib/supabase';
 import { sendInviteEmail, inviteLink } from './lib/repository';
 import { markWalkthroughDone } from './lib/records';
@@ -184,7 +185,7 @@ export function Settings() {
     copy,
     setConfirm,
   } = useOps();
-  const tabs = ['Appearance', 'Workspace', 'Team & roles', 'Currency', 'Storefront'];
+  const tabs = ['Appearance', 'Workspace', 'Team & roles', 'Currency', 'Storefront', 'Messages'];
   // Remember the open tab across saves, reloads and quiet refreshes.
   const [tab, setTabState] = useState(() => {
     try {
@@ -339,7 +340,9 @@ export function Settings() {
     <>
       <Header title="Settings" description="Make this workspace feel like yours." />
       <Tabs options={tabs} value={tab} onChange={setTab} />
-      {tab === 'Appearance' ? (
+      {tab === 'Messages' ? (
+        <MessagesSettings />
+      ) : tab === 'Appearance' ? (
         <section className="panel settings-panel">
           <div className="settings-row">
             <div>
@@ -780,7 +783,9 @@ export function Settings() {
           </Field>
         </form>
       )}
-      <SaveBar dirty={dirty} busy={saving || pending} onSave={save} onDiscard={discard} />
+      {tab !== 'Messages' && (
+        <SaveBar dirty={dirty} busy={saving || pending} onSave={save} onDiscard={discard} />
+      )}
       <div className="settings-footer">
         {demoMode && (
           <Button icon="RotateCcw" onClick={() => setDialog({ type: 'reset' })}>
@@ -1032,6 +1037,12 @@ export function Storefront({ theme: override, embedded = false }) {
     preview = demoMode || (!!session && sessionStorage.getItem('jo-store-preview') === '1');
   } catch {}
   const open = (dialog) => !embedded && setDialog(dialog);
+  // A tracking link from the seller: #Storefront/<slug>/track/<token>.
+  useEffect(() => {
+    const [, , kind, code] = location.hash.slice(1).split('/');
+    if (!embedded && kind === 'track' && code)
+      open({ type: 'track', code: decodeURIComponent(code) });
+  }, []);
   const listed = items.filter((i) => i.status !== 'Draft' && (isUnlimited(i) || i.qty > 0));
   const openTrips = trips.filter(
     (t) => t.status === 'Open for orders' || listed.some((i) => i.trip === t.id),

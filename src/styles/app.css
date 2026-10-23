@@ -4896,3 +4896,286 @@ tfoot td {
     max-width: 88%;
   }
 }
+
+/* Sprint 1 (ADR-008): shipping, reminders, message templates */
+.selection-bar {
+  flex-wrap: wrap;
+}
+.ops-list {
+  list-style: none;
+  margin: var(--s-3) 0 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+.ops-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+}
+.ops-list li + li {
+  border-top: 1px solid var(--divider);
+}
+.ops-list li > div {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+.ops-list small {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.ops-list li.copied strong {
+  color: var(--text-3);
+}
+.ship-rows {
+  display: grid;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+}
+.ship-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, 200px);
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) 0;
+  border-top: 1px solid var(--divider);
+}
+.ship-row > span {
+  display: grid;
+  min-width: 0;
+}
+.ship-row small {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ship-row input {
+  text-transform: uppercase;
+  font-family: var(--mono);
+}
+.ship-skipped {
+  margin-top: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r);
+  background: var(--amber-soft);
+}
+.ship-skipped h3 {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  margin: 0 0 var(--s-2);
+}
+.ship-skipped ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-xs);
+}
+.ship-skipped li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+.ship-skipped small {
+  color: var(--amber);
+}
+.tracking-shipment {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  margin: var(--s-3) 0;
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  text-align: left;
+  font-size: var(--fs);
+}
+.tracking-shipment dt {
+  color: var(--text-3);
+}
+.tracking-shipment dd {
+  margin: 0;
+}
+.messages-settings {
+  margin-bottom: var(--s-4);
+}
+.bank-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr;
+  gap: var(--s-3);
+}
+.messages-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: var(--s-5);
+}
+.messages-fields {
+  display: grid;
+  gap: var(--s-2);
+  align-content: start;
+}
+.messages-fields textarea {
+  resize: vertical;
+}
+.messages-side {
+  display: grid;
+  gap: var(--s-4);
+  align-content: start;
+}
+.message-preview {
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-lg);
+  background: var(--accent-soft);
+}
+.message-preview small,
+.placeholder-list small {
+  color: var(--text-3);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.message-preview p {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  font-size: var(--fs);
+}
+.placeholder-list dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 6px 0 0;
+  font-size: var(--fs-xs);
+}
+.placeholder-list dd {
+  margin: 0;
+  color: var(--text-3);
+}
+
+/* Sprint 1 phone fixes */
+@media (max-width: 900px) {
+  .items-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .messages-grid,
+  .bank-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 640px) {
+  .items-grid {
+    gap: var(--s-3);
+  }
+  .item-content {
+    padding: var(--s-3);
+  }
+  .item-category {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .item-category .badge {
+    max-width: 100%;
+  }
+  .item-price {
+    flex-wrap: wrap;
+    gap: 2px 8px;
+  }
+  .item-price strong {
+    white-space: nowrap;
+  }
+  .item-margin {
+    flex-wrap: wrap;
+    gap: 2px 8px;
+  }
+  /* Orders: a two-line card. Line 1 buyer + amount, line 2 item + status. */
+  .orders-table tbody tr {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'check cust amount'
+      'check item status';
+    align-items: start;
+    gap: 6px 12px;
+  }
+  .orders-table tbody tr:not(:has(.o-check)) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'cust amount'
+      'item status';
+  }
+  .orders-table td.o-check {
+    grid-area: check;
+    padding-top: 6px !important;
+  }
+  .orders-table td.o-cust {
+    grid-area: cust;
+    width: auto !important;
+  }
+  .orders-table td.o-item {
+    grid-area: item;
+    padding-left: 0 !important;
+  }
+  .orders-table td.o-status {
+    grid-area: status;
+    justify-self: end;
+  }
+  .orders-table td.o-amount {
+    grid-area: amount;
+    margin-left: 0 !important;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .orders-table td.o-source,
+  .orders-table td.o-go {
+    display: none !important;
+  }
+  .orders-table .customer-cell .avatar {
+    display: none;
+  }
+  .orders-table .item-title {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .tabs {
+    mask-image: linear-gradient(90deg, #000 85%, transparent);
+    padding-right: 24px;
+  }
+  .purchase-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 6px 12px;
+  }
+  .purchase-row > .muted,
+  .purchase-row > .purchase-badges {
+    grid-column: 2;
+  }
+  .purchase-row > div {
+    min-width: 0;
+  }
+  .ship-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .ops-list li {
+    flex-wrap: wrap;
+  }
+}
+.selection-bar {
+  position: sticky;
+  top: calc(var(--topbar-h) + 4px);
+  z-index: 5;
+  box-shadow: var(--shadow-sm);
+}
+.message-preview .amber {
+  display: block;
+  margin-top: 6px;
+  color: var(--amber);
+  text-transform: none;
+  letter-spacing: 0;
+}

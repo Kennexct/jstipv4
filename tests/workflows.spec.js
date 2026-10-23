@@ -70,6 +70,14 @@ test('paid order captures actual purchase cost, reaches delivery and public trac
   await page.getByText('Sinta Maharani', { exact: true }).click();
   await expect(page.getByText('Rp 87.000', { exact: true })).toBeVisible();
   await page.getByLabel('Update order status').selectOption('Shipped');
+  // Shipping asks for the courier and resi (ADR-008).
+  await page.getByLabel('Resi for JO-1046').fill('jne0012345678');
+  await page.getByRole('button', { name: 'Mark shipped' }).click();
+  await page
+    .getByRole('dialog', { name: 'Order shipped' })
+    .getByRole('button', { name: 'Done' })
+    .click();
+  await expect(page.getByText('JNE0012345678')).toBeVisible();
   await page.getByLabel('Update order status').selectOption('Delivered');
   await page.getByRole('button', { name: 'Close detail' }).click();
   await page.goto('/#Storefront');
@@ -393,4 +401,97 @@ test('platform console has an Inbox for landing-page chats', async ({ page }) =>
   await page.getByRole('button', { name: 'Inbox', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible();
   await expect(page.getByText('The inbox needs the live database')).toBeVisible();
+});
+
+test('message templates are saved once and used by every copy button', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/#Settings');
+  await page.getByRole('button', { name: 'Messages', exact: true }).click();
+  await page.getByLabel('Bank', { exact: true }).fill('BCA');
+  await page.getByLabel('Account number').fill('123 456 7890');
+  await page.getByLabel('Account holder').fill('Rina');
+  await page.getByLabel('Payment reminder').fill('Kak {nama}, sisa {sisa} ke {rekening} ya.');
+  await expect(page.locator('.message-preview')).toContainText('BCA 123 456 7890 a.n. Rina');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Message templates saved.')).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: 'Messages', exact: true }).click();
+  await expect(page.getByLabel('Account holder')).toHaveValue('Rina');
+  await page.goto('/#Orders');
+  await page.getByText('Aditya Pratama', { exact: true }).click();
+  await page.getByRole('button', { name: 'Payment reminder' }).click();
+  const text = await page.evaluate(() => navigator.clipboard.readText());
+  expect(text).toBe('Kak Aditya, sisa Rp 425.000 ke BCA 123 456 7890 a.n. Rina ya.');
+  await page.getByRole('button', { name: 'Copy quote' }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/^Halo Kak Aditya!/);
+});
+test('shipping records courier and resi, and buyers see them on the tracking link', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/#Orders');
+  await page.getByText('Dewi Anggraini', { exact: true }).click();
+  await page.getByLabel('Update order status').selectOption('Shipped');
+  const dialog = page.getByRole('dialog', { name: 'Mark as shipped' });
+  await dialog.getByLabel('Courier').selectOption('J&T');
+  await dialog.getByRole('button', { name: 'Mark shipped' }).click();
+  await expect(dialog.getByText('Enter the resi for JO-1044.')).toBeVisible();
+  await dialog.getByLabel('Resi for JO-1044').fill('<bad>');
+  await dialog.getByRole('button', { name: 'Mark shipped' }).click();
+  await expect(dialog.getByText(/letters, numbers and dashes/)).toBeVisible();
+  await dialog.getByLabel('Resi for JO-1044').fill('jt0012345678');
+  await dialog.getByRole('button', { name: 'Mark shipped' }).click();
+  await page.getByRole('button', { name: 'Copy message' }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
+    'via J&T, resi JT0012345678',
+  );
+  await page
+    .getByRole('dialog', { name: 'Order shipped' })
+    .getByRole('button', { name: 'Done' })
+    .click();
+  await expect(page.locator('.details-list')).toContainText('J&T · JT0012345678');
+  // A tracking link opens straight to the result.
+  await page.goto('/#Storefront/demo/track/JO-1044');
+  const tracking = page.getByRole('dialog');
+  await expect(tracking.getByText('Your order is shipped')).toBeVisible();
+  await expect(tracking.locator('.tracking-shipment')).toContainText('JT0012345678');
+});
+test('bulk actions copy one reminder per unpaid buyer and skip orders that cannot ship', async ({
+  page,
+}) => {
+  await page.goto('/#Orders');
+  for (const id of ['JO-1048', 'JO-1047', 'JO-1046', 'JO-1044'])
+    await page.getByLabel('Select ' + id).check();
+  await page.getByRole('button', { name: 'Copy reminders' }).click();
+  const reminders = page.getByRole('dialog', { name: /Payment reminders/ });
+  await expect(reminders.locator('.ops-list li')).toHaveCount(2);
+  await expect(reminders).toContainText('2 selected orders are already paid');
+  await reminders.getByRole('button', { name: 'Close dialog' }).click();
+  await page.getByRole('button', { name: 'Mark shipped' }).click();
+  const ship = page.getByRole('dialog', { name: 'Mark as shipped' });
+  await expect(ship.locator('.ship-row')).toHaveCount(1);
+  await expect(ship.locator('.ship-skipped li')).toHaveCount(3);
+  await expect(ship.locator('.ship-skipped')).toContainText('Not purchased yet');
+});
+test('post and add another keeps the trip and markup and clears the item', async ({ page }) => {
+  await page.goto('/#Items');
+  await page.getByRole('button', { name: 'Add item', exact: true }).click();
+  await page.getByLabel('Item name').fill('Yuzu hand cream');
+  await page.getByLabel('Purchase price', { exact: true }).fill('1500');
+  await page.getByLabel('Markup', { exact: true }).fill('35');
+  await page.getByRole('button', { name: 'Post and add another' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByLabel('Item name')).toHaveValue('');
+  await expect(dialog.getByLabel('Item name')).toBeFocused();
+  await expect(dialog.getByLabel('Markup', { exact: true })).toHaveValue('35');
+  await dialog.getByLabel('Item name').fill('Sakura lip balm');
+  await dialog.getByLabel('Purchase price', { exact: true }).fill('800');
+  await page.keyboard.press('Enter');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Yuzu hand cream', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sakura lip balm', exact: true })).toBeVisible();
 });

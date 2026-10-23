@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useRef } from 'r
 import { demoMode, supabase, rpc, publicSlug } from './lib/supabase';
 import { emptyWorkspace, recordId, csvCell } from './lib/records';
 import { loadWorkspace, loadStorefront, commitWorkspace, adminAction } from './lib/repository';
+import { canShip, shipBlocker, normaliseResi } from './lib/messages';
 const Context = createContext(null);
 export const useOps = () => useContext(Context);
 // Register a form's unsaved state so navigation, Esc and closing ask before discarding it.
@@ -40,7 +41,8 @@ export function Provider({ children, initialSeed }) {
     [pending, setPending] = useState(false),
     [pageLoading, setPageLoading] = useState(false),
     [routeLoading, setRouteLoading] = useState(false),
-    [confirm, setConfirm] = useState(null);
+    [confirm, setConfirm] = useState(null),
+    [savedMessaging, setSavedMessaging] = useState(null);
   const dataRef = useRef(data),
     supportRef = useRef(support),
     busyRef = useRef(false),
@@ -517,6 +519,18 @@ export function Provider({ children, initialSeed }) {
       setDialog({ type: 'payment', order: o });
       return false;
     }
+    // Shipping always records the courier and resi (ADR-008).
+    if (patch.status === 'Shipped' && o.status !== 'Shipped') {
+      const blocker = shipBlocker({ ...o, paid });
+      if (blocker) {
+        announce(
+          blocker === 'Not purchased yet' ? 'Purchase this order before shipping.' : blocker + '.',
+        );
+        return false;
+      }
+      setDialog({ type: 'ship', ids: [id] });
+      return false;
+    }
     if (patch.status === 'Purchased' && paid < deposit) {
       announce('Collect the down payment before purchasing.');
       setDialog({ type: 'payment', order: o });
@@ -545,10 +559,94 @@ export function Provider({ children, initialSeed }) {
       });
     return saved;
   };
+  // Message templates (ADR-008): one workspace-level setting, read by every member.
+  useEffect(() => {
+    if (demoMode || connection !== 'ready' || !data.workspaceId || mode !== 'seller') return;
+    let stale = false;
+    rpc('jastip_messaging', { p_workspace: data.workspaceId })
+      .then((value) => !stale && setSavedMessaging(value || {}))
+      .catch(() => !stale && setSavedMessaging({ unavailable: true }));
+    return () => {
+      stale = true;
+    };
+  }, [connection, data.workspaceId, mode]);
+  const messaging = demoMode ? data.messaging || {} : savedMessaging || {};
+  const saveMessaging = async (value) => {
+    if (supportRef.current) {
+      announce('Support view is read-only. Exit support view to edit.');
+      return false;
+    }
+    if (demoMode) return change((d) => ({ ...d, messaging: value }), 'Message templates saved.');
+    try {
+      setSavedMessaging(
+        await rpc('jastip_save_messaging', { p_workspace: data.workspaceId, p_value: value }),
+      );
+      announce('Message templates saved.');
+      return true;
+    } catch (e) {
+      announce('Changes were not saved: ' + e.message);
+      return false;
+    }
+  };
+  // Mark orders shipped with courier and resi. Atomic on the server; same rules in demo mode.
+  const shipOrders = async (shipments) => {
+    const list = shipments.map((s) => ({ ...s, resi: normaliseResi(s.resi) }));
+    const label = list.length === 1 ? `${list[0].id} shipped.` : `${list.length} orders shipped.`;
+    const orders = dataRef.current.orders;
+    if (list.some((s) => !canShip(orders.find((o) => o.id === s.id) || {}))) {
+      announce('Only purchased, fully paid orders can be shipped.');
+      return false;
+    }
+    if (demoMode || supportRef.current)
+      return change(
+        (d) => ({
+          ...d,
+          orders: d.orders.map((o) => {
+            const s = list.find((x) => x.id === o.id);
+            return s
+              ? {
+                  ...o,
+                  status: 'Shipped',
+                  courier: s.courier,
+                  resi: s.resi,
+                  shippedAt: o.shippedAt || new Date().toISOString(),
+                }
+              : o;
+          }),
+        }),
+        label,
+      );
+    if (busyRef.current) {
+      announce('A change is still saving. Please wait.');
+      return false;
+    }
+    busyRef.current = true;
+    setPending(true);
+    try {
+      const result = await rpc('jastip_ship_orders', {
+        p_workspace: dataRef.current.workspaceId,
+        p_revision: dataRef.current.revision,
+        p_shipments: list,
+      });
+      install({ ...result, preferences: dataRef.current.preferences });
+      announce(label);
+      return true;
+    } catch (e) {
+      announce('Not shipped: ' + e.message);
+      if (/Another user/.test(e.message)) await reload();
+      return false;
+    } finally {
+      busyRef.current = false;
+      setPending(false);
+    }
+  };
   return (
     <Context.Provider
       value={{
         data,
+        messaging,
+        saveMessaging,
+        shipOrders,
         setData,
         change,
         page,

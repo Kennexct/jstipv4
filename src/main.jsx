@@ -9,6 +9,7 @@ import { ConnectionGate } from './auth';
 import { Overview, Orders, Items, Requests, Trips, Purchasing, Reports, Customers } from './seller';
 import { Billing, Settings, Welcome, Storefront, Admin } from './workspaces';
 import { Dialog, DetailDrawer, CommandPalette } from './dialogs';
+import { OpsDialog, opsDialogTypes } from './ops-dialogs';
 import {
   I,
   Button,
@@ -494,11 +495,14 @@ function App() {
         </div>
       )}
       {drawer && <DetailDrawer key={drawer.id} />} {palette && <CommandPalette />}
-      {dialog && (
-        <Dialog
-          key={dialog.type + (dialog.item?.id || dialog.order?.id || dialog.budget?.id || '')}
-        />
-      )}{' '}
+      {dialog &&
+        (opsDialogTypes.includes(dialog.type) ? (
+          <OpsDialog key={dialog.type + (dialog.ids || []).join()} />
+        ) : (
+          <Dialog
+            key={dialog.type + (dialog.item?.id || dialog.order?.id || dialog.budget?.id || '')}
+          />
+        ))}{' '}
       {toast && (
         <div className="toast" role="status">
           <I name="CheckCircle2" size={16} />
