@@ -343,7 +343,8 @@ export function Orders() {
     exportCsv,
     announce,
   } = useOps();
-  const [status, setStatus] = useState('All'),
+  // The quick sheet's "Record payment" opens straight on unpaid orders.
+  const [status, setStatus] = useState(() => sessionStorage.getItem('jo-orders-tab') || 'All'),
     [q, setQ] = useState(''),
     [trip, setTrip] = useState('all'),
     [selected, setSelected] = useState([]);
@@ -355,6 +356,16 @@ export function Orders() {
       (trip === 'all' || o.trip === trip) &&
       `${o.name} ${o.id} ${o.item}`.toLowerCase().includes(q.toLowerCase()),
   );
+  useEffect(() => {
+    const pick = () => {
+      const tab = sessionStorage.getItem('jo-orders-tab');
+      sessionStorage.removeItem('jo-orders-tab');
+      if (tab) setStatus(tab);
+    };
+    pick();
+    window.addEventListener('jo-orders-tab', pick);
+    return () => window.removeEventListener('jo-orders-tab', pick);
+  }, []);
   return (
     <>
       <Header title="Orders" description="Every order, from first request to their front door.">
@@ -440,6 +451,7 @@ export function Orders() {
     </>
   );
 }
+const itemStatuses = ['Available', 'Pre-order', 'Draft'];
 export function Items() {
   const {
     data: { items, trips },
@@ -447,16 +459,57 @@ export function Items() {
     navigate,
     change,
     role,
+    support,
   } = useOps();
+  const seller = role !== 'Helper' && !support;
   const [status, setStatus] = useState('All'),
     [q, setQ] = useState(''),
-    [trip, setTrip] = useState('all');
+    [trip, setTrip] = useState('all'),
+    [selected, setSelected] = useState([]),
+    [bulkStatus, setBulkStatus] = useState('Available'),
+    // Cards for browsing, a list for quick changes (feedback round 1). Remembered per browser.
+    [view, setViewState] = useState(() => {
+      try {
+        return localStorage.getItem('jo-items-view') === 'List' ? 'List' : 'Cards';
+      } catch {
+        return 'Cards';
+      }
+    });
+  const setView = (v) => {
+    setViewState(v);
+    try {
+      localStorage.setItem('jo-items-view', v);
+    } catch {}
+  };
   const list = items.filter(
     (i) =>
       (status === 'All' || i.status === status) &&
       (trip === 'all' || i.trip === trip) &&
       i.name.toLowerCase().includes(q.toLowerCase()),
   );
+  const closed = (i) => trips.find((t) => t.id === i.trip)?.status === 'Closed';
+  const setStatuses = (ids, next) => {
+    const ok = items.filter((i) => ids.includes(i.id) && i.status !== next && !closed(i));
+    if (!ok.length) return;
+    change(
+      (d) => ({
+        ...d,
+        items: d.items.map((i) => (ok.some((x) => x.id === i.id) ? { ...i, status: next } : i)),
+      }),
+      ok.length === 1 ? `${ok[0].name} is now ${next}.` : `${ok.length} items set to ${next}.`,
+    );
+  };
+  const copyButton = (i) =>
+    seller && (
+      <button
+        className="icon-btn"
+        aria-label={'Copy ' + i.name + ' to another trip'}
+        title="Copy to another trip"
+        onClick={() => setDialog({ type: 'item', copyOf: i })}
+      >
+        <I name="Copy" size={14} />
+      </button>
+    );
   return (
     <>
       <Header title="Items" description="Your finds, priced with confidence and ready to share.">
@@ -477,71 +530,173 @@ export function Items() {
         <TripFilter trips={trips} value={trip} onChange={setTrip} />
         <span className="spacer" />
         <span className="muted">{list.length} items</span>
-      </div>
-      <div className="items-grid">
-        {list.map((i) => (
-          <article key={i.id} className="item-card">
+        <div className="view-switch" role="group" aria-label="Item view">
+          {[
+            ['Cards', 'LayoutGrid'],
+            ['List', 'List'],
+          ].map(([v, icon]) => (
             <button
-              className="product-open"
-              aria-label={'Edit ' + i.name}
-              onClick={() => setDialog({ type: 'item', item: i })}
+              key={v}
+              type="button"
+              aria-pressed={view === v}
+              className={view === v ? 'active' : ''}
+              onClick={() => setView(v)}
             >
-              <ProductArt item={i} />
+              <I name={icon} size={14} />
+              {v}
             </button>
-            <div className="item-content">
-              <div className="item-category">
-                <span>{i.category}</span>
-                <Badge status={i.status} />
-              </div>
-              <button className="item-name" onClick={() => setDialog({ type: 'item', item: i })}>
-                {i.name}
-              </button>
-              <span className="muted">{trips.find((t) => t.id === i.trip)?.name}</span>
-              <div className="item-price">
-                <strong>{money(i.selling, false, currencyOf(i, trips))}</strong>
-                <small>{stockLabel(i)}</small>
-              </div>
-              {role !== 'Helper' && (
-                <div className="item-margin">
-                  <span>Estimated margin</span>
-                  <span className={i.selling - i.cost - i.allocation < 0 ? 'red' : ''}>
-                    {(((i.selling - i.cost - i.allocation) / i.selling) * 100).toFixed(1)}%
-                  </span>
-                </div>
-              )}
-              <div className="item-actions">
-                <button className="text-btn" onClick={() => setDialog({ type: 'item', item: i })}>
-                  <I name="Pencil" size={13} />
-                  Edit item
-                </button>
-                <button
-                  className="icon-btn"
-                  aria-label={'Duplicate ' + i.name}
-                  onClick={() =>
-                    change(
-                      (d) => ({
-                        ...d,
-                        items: [
-                          {
-                            ...i,
-                            id: 'IT-' + Date.now(),
-                            name: i.name + ' (copy)',
-                            status: 'Draft',
-                          },
-                          ...d.items,
-                        ],
-                      }),
-                      `${i.name} duplicated as a draft.`,
-                    )
-                  }
-                >
-                  <I name="Copy" size={14} />
-                </button>
-              </div>
-            </div>
-          </article>
-        ))}
+          ))}
+        </div>
       </div>
+      {view === 'List' && seller && selected.length > 0 && (
+        <div className="selection-bar">
+          {selected.length} selected
+          <select
+            aria-label="New status for selected items"
+            value={bulkStatus}
+            onChange={(e) => setBulkStatus(e.target.value)}
+          >
+            {itemStatuses.map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+          <Button
+            primary
+            onClick={() => {
+              setStatuses(selected, bulkStatus);
+              setSelected([]);
+            }}
+          >
+            Set status
+          </Button>
+          <Button onClick={() => setSelected([])}>Clear</Button>
+        </div>
+      )}
+      {view === 'List' ? (
+        <section className="panel">
+          <div className="table-wrap items-table">
+            <table>
+              <thead>
+                <tr>
+                  {seller && (
+                    <th>
+                      <input
+                        type="checkbox"
+                        aria-label="Select all items"
+                        checked={list.length > 0 && list.every((i) => selected.includes(i.id))}
+                        onChange={(e) => setSelected(e.target.checked ? list.map((i) => i.id) : [])}
+                      />
+                    </th>
+                  )}
+                  <th>Item</th>
+                  <th>Trip</th>
+                  <th className="num">Price</th>
+                  <th>Stock</th>
+                  <th>Status</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((i) => (
+                  <tr key={i.id}>
+                    {seller && (
+                      <td className="o-check">
+                        <input
+                          type="checkbox"
+                          aria-label={'Select ' + i.name}
+                          checked={selected.includes(i.id)}
+                          onChange={(e) =>
+                            setSelected((sel) =>
+                              e.target.checked ? [...sel, i.id] : sel.filter((x) => x !== i.id),
+                            )
+                          }
+                        />
+                      </td>
+                    )}
+                    <td>
+                      <button
+                        className="item-row-name"
+                        onClick={() => setDialog({ type: 'item', item: i })}
+                      >
+                        <span className="item-thumb">
+                          <ProductArt item={i} />
+                        </span>
+                        <span>
+                          {i.name}
+                          <small>{i.category}</small>
+                        </span>
+                      </button>
+                    </td>
+                    <td className="muted">{trips.find((t) => t.id === i.trip)?.name}</td>
+                    <td className="num">{money(i.selling, false, currencyOf(i, trips))}</td>
+                    <td className="muted">{stockLabel(i)}</td>
+                    <td>
+                      {seller && !closed(i) ? (
+                        <select
+                          className="status-select"
+                          aria-label={'Status of ' + i.name}
+                          value={i.status}
+                          onChange={(e) => setStatuses([i.id], e.target.value)}
+                        >
+                          {itemStatuses.map((x) => (
+                            <option key={x}>{x}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <Badge status={i.status} />
+                      )}
+                    </td>
+                    <td className="num">{copyButton(i)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : (
+        <div className="items-grid">
+          {list.map((i) => (
+            <article key={i.id} className="item-card">
+              <button
+                className="product-open"
+                aria-label={'Edit ' + i.name}
+                onClick={() => setDialog({ type: 'item', item: i })}
+              >
+                <ProductArt item={i} />
+              </button>
+              <div className="item-content">
+                <div className="item-category">
+                  <span>{i.category}</span>
+                  <Badge status={i.status} />
+                </div>
+                <button className="item-name" onClick={() => setDialog({ type: 'item', item: i })}>
+                  {i.name}
+                </button>
+                <span className="muted">{trips.find((t) => t.id === i.trip)?.name}</span>
+                <div className="item-price">
+                  <strong>{money(i.selling, false, currencyOf(i, trips))}</strong>
+                  <small>{stockLabel(i)}</small>
+                </div>
+                {role !== 'Helper' && (
+                  <div className="item-margin">
+                    <span>Estimated margin</span>
+                    <span className={i.selling - i.cost - i.allocation < 0 ? 'red' : ''}>
+                      {(((i.selling - i.cost - i.allocation) / i.selling) * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                )}
+                <div className="item-actions">
+                  <button className="text-btn" onClick={() => setDialog({ type: 'item', item: i })}>
+                    <I name="Pencil" size={13} />
+                    Edit item
+                  </button>
+                  {copyButton(i)}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
       {!list.length && (
         <Empty title="No items found">
           <Button primary onClick={() => setDialog({ type: 'item' })}>
@@ -723,6 +878,15 @@ export function Trips() {
               {t.city} → {t.hub} · {t.dates} · Buy in {t.currency} · Sell in {tcur}
             </p>
           </div>
+          {role !== 'Helper' && t.status !== 'Closed' && (
+            <Button
+              icon="Pencil"
+              disabled={support}
+              onClick={() => setDialog({ type: 'trip', trip: t, edit: true })}
+            >
+              Edit trip
+            </Button>
+          )}
           <select
             aria-label="Trip status"
             disabled={t.status === 'Closed' || support}

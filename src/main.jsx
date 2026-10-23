@@ -10,6 +10,7 @@ import { Overview, Orders, Items, Requests, Trips, Purchasing, Reports, Customer
 import { Billing, Settings, Welcome, Storefront, Admin } from './workspaces';
 import { Dialog, DetailDrawer, CommandPalette } from './dialogs';
 import { OpsDialog, opsDialogTypes } from './ops-dialogs';
+import { QuickSheet } from './quick-actions';
 import {
   I,
   Button,
@@ -100,6 +101,7 @@ function App() {
     exitSupport,
   } = useOps();
   const [notifications, setNotifications] = useState(false);
+  const [quick, setQuick] = useState(false);
   const inboxUnread = useAdminUnread(!demoMode && connection === 'ready' && mode === 'admin');
   // After signing in from the landing page, leave the #SignIn / #SignUp address behind.
   useEffect(() => {
@@ -472,19 +474,17 @@ function App() {
             {[
               ['Overview', 'House', 'Home'],
               ['Orders', 'Inbox', 'Orders'],
-              ['Add', 'Plus', 'Add'],
+              ['Add', 'Plus', 'Quick add'],
               ['Trips', 'Plane', 'Trips'],
               ['More', 'Menu', 'More'],
             ].map(([p, i, l]) => (
               <button
                 key={p}
-                className={page === p ? 'active' : ''}
+                className={`${page === p ? 'active' : ''} ${p === 'Add' ? 'quick-add' : ''} ${p === 'More' ? 'more-btn' : ''}`}
+                aria-haspopup={p === 'Add' ? 'dialog' : undefined}
+                aria-expanded={p === 'Add' ? quick : undefined}
                 onClick={() =>
-                  p === 'Add'
-                    ? setDialog({ type: 'item' })
-                    : p === 'More'
-                      ? setMobile(true)
-                      : navigate(p)
+                  p === 'Add' ? setQuick(true) : p === 'More' ? setMobile(true) : navigate(p)
                 }
               >
                 <I name={i} size={20} />
@@ -492,6 +492,7 @@ function App() {
               </button>
             ))}
           </nav>
+          {quick && <QuickSheet onClose={() => setQuick(false)} />}
         </div>
       )}
       {drawer && <DetailDrawer key={drawer.id} />} {palette && <CommandPalette />}
@@ -516,6 +517,22 @@ function App() {
     </>
   );
 }
+// Tapping a number field selects its value, so typing replaces it (feedback round 1).
+// The mouseup that follows a click would clear the selection, so that one mouseup is cancelled.
+document.addEventListener('focusin', (e) => {
+  const t = e.target;
+  if (
+    !(t instanceof HTMLInputElement) ||
+    !(t.type === 'number' || t.inputMode === 'decimal' || t.inputMode === 'numeric')
+  )
+    return;
+  const keep = (ev) => ev.preventDefault();
+  t.addEventListener('mouseup', keep, { once: true });
+  setTimeout(() => t.removeEventListener('mouseup', keep), 600);
+  try {
+    t.select();
+  } catch {}
+});
 async function start() {
   const initialSeed =
     import.meta.env.VITE_ENABLE_DEMO === 'true'

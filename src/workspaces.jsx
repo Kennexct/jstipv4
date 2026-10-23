@@ -5,6 +5,7 @@ import { planDetails, accentOptions } from './data';
 import { LiveBilling, LiveAdminSummary } from './live-workspaces';
 import { AdminInbox } from './admin-inbox';
 import { MessagesSettings } from './messages-settings';
+import { ShippingSettings } from './shipping-settings';
 import { rpc } from './lib/supabase';
 import { sendInviteEmail, inviteLink } from './lib/repository';
 import { markWalkthroughDone } from './lib/records';
@@ -185,7 +186,15 @@ export function Settings() {
     copy,
     setConfirm,
   } = useOps();
-  const tabs = ['Appearance', 'Workspace', 'Team & roles', 'Currency', 'Storefront', 'Messages'];
+  const tabs = [
+    'Appearance',
+    'Workspace',
+    'Team & roles',
+    'Currency',
+    'Storefront',
+    'Messages',
+    'Shipping & region',
+  ];
   // Remember the open tab across saves, reloads and quiet refreshes.
   const [tab, setTabState] = useState(() => {
     try {
@@ -342,6 +351,8 @@ export function Settings() {
       <Tabs options={tabs} value={tab} onChange={setTab} />
       {tab === 'Messages' ? (
         <MessagesSettings />
+      ) : tab === 'Shipping & region' ? (
+        <ShippingSettings />
       ) : tab === 'Appearance' ? (
         <section className="panel settings-panel">
           <div className="settings-row">
@@ -783,7 +794,7 @@ export function Settings() {
           </Field>
         </form>
       )}
-      {tab !== 'Messages' && (
+      {!['Messages', 'Shipping & region'].includes(tab) && (
         <SaveBar dirty={dirty} busy={saving || pending} onSave={save} onDiscard={discard} />
       )}
       <div className="settings-footer">

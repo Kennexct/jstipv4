@@ -4,11 +4,10 @@ import { useOps, useUnsavedChanges } from './store';
 import { Overlay, Button, Field, Callout, I, Badge } from './ui';
 import { money, currencyOf, outstanding } from './money';
 import { appBase } from './lib/repository';
+import { findCourier, needsTracking, words } from './lib/region';
 import {
-  COURIERS,
   canShip,
   shipBlocker,
-  resiOptional,
   validResi,
   normaliseResi,
   orderMessage,
@@ -16,6 +15,8 @@ import {
 } from './lib/messages';
 import { MoneyDialog, moneyDialogTypes } from './money-dialogs';
 import { Frame } from './dialog-frame';
+
+const capital = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 
 export const opsDialogTypes = ['ship', 'reminders', ...moneyDialogTypes];
 
@@ -30,26 +31,49 @@ export function OpsDialog() {
 }
 
 function ShipDialog({ ids }) {
-  const { data, setDialog, shipOrders, copy, messaging, pending } = useOps();
+  const { data, setDialog, shipOrders, copy, messaging, pending, couriers, region, role } =
+    useOps();
+  const w = words(region);
   const picked = data.orders.filter((o) => ids.includes(o.id));
   const ready = picked.filter(canShip),
     skipped = picked.filter((o) => !canShip(o));
-  const [courier, setCourier] = useState(ready[0]?.courier || 'JNE'),
+  // Couriers come from Settings → Shipping & region; a new one typed here joins that list.
+  const [courier, setCourier] = useState(
+      findCourier(couriers, ready[0]?.courier)?.name || couriers[0]?.name || '',
+    ),
+    [newCourier, setNewCourier] = useState(''),
+    [newTracking, setNewTracking] = useState(true),
     [resi, setResi] = useState(() => Object.fromEntries(ready.map((o) => [o.id, o.resi || '']))),
     [error, setError] = useState(''),
     [done, setDone] = useState(false);
   const dirty = !done && Object.values(resi).some((v) => v.trim());
   useUnsavedChanges('ship-dialog', dirty);
   const close = () => setDialog(null);
-  const optional = resiOptional(courier);
+  const adding = courier === '__new',
+    name = adding ? newCourier.trim() : courier,
+    optional = adding ? !newTracking : !needsTracking(couriers, courier);
   async function submit(e) {
     e.preventDefault();
+    if (adding) {
+      if (!name || name.length > 40 || /[<>]/.test(name))
+        return setError('Give the new courier a name (up to 40 characters).');
+      if (findCourier(couriers, name))
+        return setError(`${findCourier(couriers, name).name} is already on your list.`);
+    }
     const missing = ready.find((o) => !optional && !resi[o.id]?.trim());
-    if (missing) return setError(`Enter the resi for ${missing.id}.`);
+    if (missing) return setError(`Enter the ${w.trackingLong} for ${missing.id}.`);
     const bad = ready.find((o) => resi[o.id]?.trim() && !validResi(resi[o.id]));
-    if (bad) return setError(`Resi for ${bad.id} can use letters, numbers and dashes (4–40).`);
+    if (bad)
+      return setError(`${w.tracking} for ${bad.id} can use letters, numbers and dashes (4–40).`);
     setError('');
-    const ok = await shipOrders(ready.map((o) => ({ id: o.id, courier, resi: resi[o.id] || '' })));
+    const ok = await shipOrders(
+      ready.map((o) => ({
+        id: o.id,
+        courier: name,
+        resi: resi[o.id] || '',
+        ...(adding ? { tracking: newTracking } : {}),
+      })),
+    );
     if (ok) setDone(true);
   }
   if (done) {
@@ -128,14 +152,49 @@ function ShipDialog({ ids }) {
           <>
             <Field
               label="Courier"
-              hint={optional ? 'Resi is optional for pickup and same-day couriers.' : undefined}
+              hint={
+                optional
+                  ? `No ${w.trackingLong} needed for this courier.`
+                  : 'Edit your list in Settings → Shipping & region.'
+              }
             >
               <select value={courier} onChange={(e) => setCourier(e.target.value)}>
-                {COURIERS.map((c) => (
-                  <option key={c}>{c}</option>
+                {couriers.map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {c.name}
+                  </option>
                 ))}
+                <option value="__new">+ Add new courier…</option>
               </select>
             </Field>
+            {adding && (
+              <div className="new-courier">
+                <Field
+                  label="New courier name"
+                  hint={
+                    role === 'Helper'
+                      ? 'It’s added to the workspace list for next time.'
+                      : 'Saved to your list for next time.'
+                  }
+                >
+                  <input
+                    autoFocus
+                    maxLength={40}
+                    value={newCourier}
+                    onChange={(e) => setNewCourier(e.target.value)}
+                    placeholder="e.g. Uncle Lim Van"
+                  />
+                </Field>
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={newTracking}
+                    onChange={(e) => setNewTracking(e.target.checked)}
+                  />
+                  <span>{w.usesTracking}</span>
+                </label>
+              </div>
+            )}
             <div className="ship-rows">
               {ready.map((o) => (
                 <label className="ship-row" key={o.id}>
@@ -146,8 +205,10 @@ function ShipDialog({ ids }) {
                     </small>
                   </span>
                   <input
-                    aria-label={`Resi for ${o.id}`}
-                    placeholder={optional ? 'Resi (optional)' : 'Resi number'}
+                    aria-label={`${w.tracking} for ${o.id}`}
+                    placeholder={
+                      optional ? `${capital(w.trackingLong)} (optional)` : capital(w.trackingLong)
+                    }
                     value={resi[o.id] || ''}
                     autoCapitalize="characters"
                     onChange={(e) => setResi((r) => ({ ...r, [o.id]: e.target.value }))}
@@ -158,7 +219,9 @@ function ShipDialog({ ids }) {
                 </label>
               ))}
             </div>
-            <p className="footnote">Buyers see the courier and resi on their tracking link.</p>
+            <p className="footnote">
+              Buyers see the courier and {w.trackingLong} on their tracking link.
+            </p>
           </>
         ) : (
           <Callout>None of the selected orders can ship yet.</Callout>

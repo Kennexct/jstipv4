@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { MoneyInput } from './money-input';
 import { useOps, useUnsavedChanges } from './store';
 import { orderStatuses, planDetails } from './data';
 import { recordId, today, walkthroughDone } from './lib/records';
@@ -13,6 +14,7 @@ import {
 import { supabase } from './lib/supabase';
 import { rpc } from './lib/supabase';
 import { ManualInvoice } from './live-workspaces';
+import { qtyControl } from './qty-input';
 import { orderMessage, trackingLink } from './lib/messages';
 import {
   OngkirRow,
@@ -36,6 +38,7 @@ import {
   outstanding,
   owed,
   MAX_UNLIMITED_PER_ORDER,
+  stockLabel,
   currencyOf,
   currencyNames,
   defaultRate,
@@ -58,6 +61,8 @@ import {
   navIcons,
 } from './ui';
 import { photoInputProps } from './lib/photos';
+const tripDates = (start, end) =>
+  `${new Date(start + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}–${new Date(end + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
 async function compress(file) {
   // Files from the Android app can arrive with no or a generic MIME type; only reject known non-images.
   const unknown = !file.type || file.type === 'application/octet-stream';
@@ -257,7 +262,8 @@ export function DetailDrawer() {
               </div>
               <MarginHit o={o} cur={cur} />
               <p className="footnote">
-                Quoted costs and exchange rates are stored as snapshots. Ongkir is not profit.
+                Quoted costs and exchange rates are stored as snapshots. Shipping fees are not
+                profit.
               </p>
             </section>
           )}
@@ -507,33 +513,47 @@ export function Dialog() {
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [tracking, setTracking] = useState(null),
-    [gallery, setGallery] = useState(0);
+    [gallery, setGallery] = useState(0),
+    [suggestOpen, setSuggestOpen] = useState(false);
   const initial = original.item,
+    // "Copy to another trip" (feedback round 1): a new item seeded from an existing one.
+    copyOf = original.type === 'item' && !initial ? original.copyOf : null,
     order = original.order,
-    priced = initial || data.items.find((i) => i.id === order?.itemId),
+    priced = initial || copyOf || data.items.find((i) => i.id === order?.itemId),
     initialTrip =
       original.trip ||
+      (copyOf &&
+        (data.trips.find((t) => t.id !== copyOf.trip && t.status !== 'Closed') ||
+          data.trips.find((t) => t.id === copyOf.trip))) ||
       data.trips.find(
         (t) => t.id === (priced?.trip || order?.trip || sessionStorage.getItem('jo-trip')),
       ) ||
       data.trips[0];
-  const [photos, setPhotos] = useState(initial?.photos || []),
+  const [photos, setPhotos] = useState(initial?.photos || copyOf?.photos || []),
     [proof, setProof] = useState(null);
+  // Editing a trip (feedback round 1): ongoing trips can change, never be deleted.
+  const editTrip = original.type === 'trip' && original.edit ? original.trip : null,
+    tripLocked =
+      !!editTrip &&
+      [data.items, data.orders, data.budgets].some((rows) =>
+        (rows || []).some((r) => r.trip === editTrip.id),
+      ),
+    tripHasExpenses = !!editTrip && (data.budgets || []).some((b) => b.trip === editTrip.id);
   const [f, setF] = useState({
-    name: initial?.name || order?.item || '',
+    name: editTrip?.name || initial?.name || copyOf?.name || order?.item || '',
     price: priced?.price || (demoMode ? 3000 : ''),
-    currency: priced?.currency || initialTrip?.currency || 'JPY',
+    currency: editTrip?.currency || priced?.currency || initialTrip?.currency || 'JPY',
     markup: priced?.markup || 20,
     markupMode: priced?.markupMode || 'percent',
     trip: initialTrip?.id || '',
     qty: original.type === 'item' ? (initial ? (initial.qty ?? 1) : 1) : order?.qty || 1,
-    unlimited: original.type === 'item' ? isUnlimited(initial) : false,
-    depositMode: (original.type === 'item' ? initial : priced)?.depositMode || 'none',
-    depositValue: (original.type === 'item' ? initial : priced)?.depositValue || '',
+    unlimited: original.type === 'item' ? isUnlimited(initial || copyOf) : false,
+    depositMode: (original.type === 'item' ? initial || copyOf : priced)?.depositMode || 'none',
+    depositValue: (original.type === 'item' ? initial || copyOf : priced)?.depositValue || '',
     status: initial?.status || 'Available',
-    store: initial?.store || '',
-    category: initial?.category || 'Beauty',
-    note: original.type === 'item' ? initial?.note || '' : '',
+    store: (initial || copyOf)?.store || '',
+    category: (initial || copyOf)?.category || 'Beauty',
+    note: original.type === 'item' ? (initial || copyOf)?.note || '' : '',
     deadline: initial?.deadline || '',
     customer: '',
     phone: '',
@@ -550,13 +570,13 @@ export function Dialog() {
     planned: original.budget?.planned || 0,
     actual: original.budget?.actual || 0,
     expenseCurrency: original.trip?.baseCurrency || 'IDR',
-    baseCurrency: data.trips.at(-1)?.baseCurrency || 'IDR',
-    city: '',
-    hub: 'Jakarta',
-    start: demoMode ? '2026-11-02' : today(),
-    end: demoMode ? '2026-11-08' : today(),
-    budget: demoMode ? 6500000 : 0,
-    units: 100,
+    baseCurrency: editTrip?.baseCurrency || data.trips.at(-1)?.baseCurrency || 'IDR',
+    city: editTrip?.city || '',
+    hub: editTrip?.hub || 'Jakarta',
+    start: editTrip?.start || (demoMode ? '2026-11-02' : today()),
+    end: editTrip?.end || (demoMode ? '2026-11-08' : today()),
+    budget: editTrip ? editTrip.budget || 0 : demoMode ? 6500000 : 0,
+    units: editTrip?.units || 100,
     consent: false,
     code: original.code || '',
     memberRole: 'Helper',
@@ -585,7 +605,9 @@ export function Dialog() {
           ? { kind: 'orders', record: original.order }
           : original.type === 'budget' && original.budget
             ? { kind: 'budgets', record: original.budget }
-            : null,
+            : original.type === 'trip' && original.edit && original.trip
+              ? { kind: 'trips', record: original.trip }
+              : null,
     ).current;
   const t = data.trips.find((t) => t.id === f.trip) ||
       data.trips[0] || {
@@ -598,6 +620,13 @@ export function Dialog() {
         allocation: 'none',
       },
     selectedItem = data.items.find((i) => i.id === f.itemId),
+    // Manual orders: show and respect what's left of the chosen item (feedback round 1).
+    orderQtyMax = selectedItem ? maxOrderQty(selectedItem) : undefined,
+    orderQtyHint = selectedItem
+      ? isUnlimited(selectedItem)
+        ? `No stock limit · up to ${MAX_UNLIMITED_PER_ORDER} per order`
+        : `${selectedItem.qty} left`
+      : undefined,
     // Selling currency for this form: the order's / item's / trip's base currency.
     base = order
       ? currencyOf(order, data.trips)
@@ -699,14 +728,14 @@ export function Dialog() {
     }
   };
   const titles = {
-    item: initial ? 'Edit item' : 'Add an item',
+    item: initial ? 'Edit item' : copyOf ? 'Copy item to a trip' : 'Add an item',
     quote: 'Prepare a quote',
     product: initial?.name,
     order: 'Place your order',
     'manual-order': 'Add order',
     payment: 'Record payment',
     purchase: 'Record actual purchase',
-    trip: 'Create a trip',
+    trip: editTrip ? 'Edit trip' : 'Create a trip',
     budget: original.budget ? 'Edit expense' : 'Add trip expense',
     request: 'Add a custom request',
     'buyer-request': 'Request an item',
@@ -865,7 +894,8 @@ export function Dialog() {
           note: f.note,
           deadline: f.deadline,
           photos,
-          image: initial?.image || (demoMode ? 'lotion' : 'none'),
+          image: initial?.image || copyOf?.image || (demoMode ? 'lotion' : 'none'),
+          ...(copyOf ? { sourceItem: copyOf.id } : {}),
         };
         if (
           await requireSaved(
@@ -952,6 +982,40 @@ export function Dialog() {
           }),
         );
         close();
+      } else if (step === 'trip' && editTrip) {
+        const cur = data.trips.find((x) => x.id === editTrip.id) || editTrip;
+        if (cur.status === 'Closed') {
+          setError('Closed trips are read-only.');
+          return;
+        }
+        const tr = {
+          ...cur,
+          name: f.name,
+          city: f.city,
+          hub: f.hub,
+          start: f.start,
+          end: f.end,
+          dates: tripDates(f.start, f.end),
+          units: Number(f.units),
+          ...(tripHasExpenses ? {} : { budget: Number(f.budget) }),
+          ...(tripLocked
+            ? {}
+            : {
+                currency: f.currency,
+                baseCurrency: f.baseCurrency,
+                rate:
+                  f.currency === cur.currency && f.baseCurrency === cur.baseCurrency
+                    ? cur.rate
+                    : defaultRate(f.currency, f.baseCurrency),
+              }),
+        };
+        await requireSaved(
+          change(
+            (d) => ({ ...d, trips: d.trips.map((x) => (x.id === tr.id ? tr : x)) }),
+            `${tr.name} updated.`,
+          ),
+        );
+        close();
       } else if (step === 'trip') {
         const tr = {
           id: recordId('TR-'),
@@ -960,7 +1024,7 @@ export function Dialog() {
           hub: f.hub,
           start: f.start,
           end: f.end,
-          dates: `${new Date(f.start + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}–${new Date(f.end + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+          dates: tripDates(f.start, f.end),
           currency: f.currency,
           baseCurrency: f.baseCurrency,
           rate: defaultRate(f.currency, f.baseCurrency),
@@ -1215,17 +1279,74 @@ export function Dialog() {
       </select>
     </Field>
   );
+  // Seller-entered orders suggest people who bought before (feedback round 1).
+  const pastCustomers =
+    step === 'manual-order'
+      ? [
+          ...new Map(
+            [...data.customers, ...[...data.orders].reverse()]
+              .filter((c) => c.name && c.phone)
+              .map((c) => [String(c.phone).replace(/\D/g, ''), c]),
+          ).values(),
+        ]
+      : [];
+  const suggestions = pastCustomers
+    .filter(
+      (c) =>
+        !f.customer.trim() ||
+        `${c.name} ${c.phone}`.toLowerCase().includes(f.customer.trim().toLowerCase()),
+    )
+    .filter((c) => c.name !== f.customer)
+    .slice(0, 5);
   const customerFields = (
     <>
-      <Field label="Your name">
+      <Field
+        label={step === 'manual-order' ? 'Customer name' : 'Your name'}
+        hint={
+          step === 'manual-order' && pastCustomers.length
+            ? 'Start typing to pick someone who ordered before.'
+            : undefined
+        }
+      >
         <input
           required
-          autoComplete="name"
+          autoComplete={step === 'manual-order' ? 'off' : 'name'}
           value={f.customer}
           onChange={(e) => set('customer', e.target.value)}
+          onFocus={() => setSuggestOpen(true)}
+          onBlur={() => setTimeout(() => setSuggestOpen(false), 150)}
           placeholder="Full name"
         />
       </Field>
+      {step === 'manual-order' && suggestOpen && suggestions.length > 0 && (
+        <ul className="suggestions" role="listbox" aria-label="Past customers">
+          {suggestions.map((c) => (
+            <li key={c.phone}>
+              <button
+                type="button"
+                role="option"
+                aria-selected="false"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setF((p) => ({
+                    ...p,
+                    customer: c.name,
+                    phone: String(c.phone).startsWith('+') ? c.phone : '+' + c.phone,
+                    address: c.address || p.address,
+                  }));
+                  setSuggestOpen(false);
+                }}
+              >
+                <strong>{c.name}</strong>
+                <small>
+                  +{String(c.phone).replace(/^\+/, '')}
+                  {c.address ? ' · ' + c.address : ''}
+                </small>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <Field
         label="WhatsApp number"
         hint="Include the country code, for example +62 812 3456 7890."
@@ -1256,10 +1377,9 @@ export function Dialog() {
       <div className="form-grid">
         <Field label="Purchase price">
           <div className="input-combo">
-            <input
-              type="number"
+            <MoneyInput
+              currency={f.currency}
               min="1"
-              step="any"
               required
               value={f.price}
               onChange={(e) => set('price', e.target.value)}
@@ -1275,6 +1395,38 @@ export function Dialog() {
             </select>
           </div>
         </Field>
+        {copyOf && t.currency && f.currency !== t.currency && (
+          <Callout>
+            {t.name} buys in {t.currency}. About{' '}
+            {money(
+              roundTo(
+                Number(f.price || 0) * defaultRate(f.currency, t.currency),
+                decimalsFor(t.currency),
+              ),
+              false,
+              t.currency,
+            )}{' '}
+            at today’s rate — check the shelf price there.{' '}
+            <button
+              type="button"
+              className="text-btn"
+              onClick={() =>
+                setF((p) => ({
+                  ...p,
+                  price: String(
+                    roundTo(
+                      Number(p.price || 0) * defaultRate(p.currency, t.currency),
+                      decimalsFor(t.currency),
+                    ),
+                  ),
+                  currency: t.currency,
+                }))
+              }
+            >
+              Use {t.currency}
+            </button>
+          </Callout>
+        )}
         <Field label="Markup" hint="Markup is on cost; margin is on selling price.">
           <div className="input-combo">
             <input
@@ -1385,7 +1537,13 @@ export function Dialog() {
         <div className="modal-head">
           <div>
             <h2 id="dialog-title">{titles[step]}</h2>
-            {step === 'item' && <p>A photo, a price, and a margin you can trust.</p>}
+            {step === 'item' && (
+              <p>
+                {copyOf
+                  ? `From ${data.trips.find((x) => x.id === copyOf.trip)?.name || 'another trip'}. Pick the trip and check the price — stock starts fresh.`
+                  : 'A photo, a price, and a margin you can trust.'}
+              </p>
+            )}
           </div>
           <button className="icon-btn" aria-label="Close dialog" onClick={close}>
             <I name="X" size={18} />
@@ -1485,14 +1643,13 @@ export function Dialog() {
                           {f.unlimited ? (
                             <input value="No limit" disabled aria-label="Quantity" />
                           ) : (
-                            <input
-                              type="number"
-                              min="0"
-                              max="10000"
-                              required
-                              value={f.qty}
-                              onChange={(e) => set('qty', e.target.value)}
-                            />
+                            qtyControl({
+                              value: f.qty,
+                              onChange: (v) => set('qty', v),
+                              min: 0,
+                              max: 10000,
+                              required: true,
+                            })
                           )}
                         </Field>
                       </div>
@@ -1600,13 +1757,12 @@ export function Dialog() {
                       <dd>{initial.deadline || 'Ask your merchant'}</dd>
                     </dl>
                     <Field label="Quantity">
-                      <input
-                        type="number"
-                        min="1"
-                        max={maxOrderQty(initial)}
-                        value={f.qty}
-                        onChange={(e) => set('qty', e.target.value)}
-                      />
+                      {qtyControl({
+                        value: f.qty,
+                        onChange: (v) => set('qty', v),
+                        min: 1,
+                        max: maxOrderQty(initial),
+                      })}
                     </Field>
                   </div>
                 </div>
@@ -1631,26 +1787,53 @@ export function Dialog() {
                   </div>
                 ) : (
                   <>
+                    {/* Pick by photo (feedback round 1); the select below stays for keyboards. */}
+                    <div className="item-picker" role="group" aria-label="Pick an item by photo">
+                      {data.items
+                        .filter((i) => i.status !== 'Draft')
+                        .map((i) => {
+                          const out = !isUnlimited(i) && Number(i.qty) <= 0;
+                          return (
+                            <button
+                              key={i.id}
+                              type="button"
+                              aria-pressed={f.itemId === i.id}
+                              disabled={out}
+                              onClick={() => set('itemId', i.id)}
+                            >
+                              <span className="item-thumb">
+                                <ProductArt item={i} />
+                              </span>
+                              <strong title={i.name}>{i.name}</strong>
+                              <small>
+                                {money(i.selling, true, currencyOf(i, data.trips))} ·{' '}
+                                {out ? 'Sold out' : stockLabel(i)}
+                              </small>
+                            </button>
+                          );
+                        })}
+                    </div>
                     <Field label="Item">
                       <select value={f.itemId} onChange={(e) => set('itemId', e.target.value)}>
                         {data.items
                           .filter((i) => i.status !== 'Draft')
                           .map((i) => (
                             <option key={i.id} value={i.id}>
-                              {i.name} · {money(i.selling, false, currencyOf(i, data.trips))}
+                              {i.name} · {money(i.selling, false, currencyOf(i, data.trips))} ·{' '}
+                              {stockLabel(i)}
                             </option>
                           ))}
                       </select>
                     </Field>
                     <div className="form-grid">
-                      <Field label="Quantity">
-                        <input
-                          type="number"
-                          required
-                          min="1"
-                          value={f.qty}
-                          onChange={(e) => set('qty', e.target.value)}
-                        />
+                      <Field label="Quantity" hint={orderQtyHint}>
+                        {qtyControl({
+                          value: f.qty,
+                          onChange: (v) => set('qty', v),
+                          min: 1,
+                          max: orderQtyMax,
+                          required: true,
+                        })}
                       </Field>
                       <Field label="Source">
                         <select value={f.source} onChange={(e) => set('source', e.target.value)}>
@@ -1710,20 +1893,15 @@ export function Dialog() {
                 {tripSelect}
                 <div className="form-grid">
                   <Field label={`Budget (${base})`}>
-                    <input
-                      type="number"
+                    <MoneyInput
+                      currency={base}
                       min="0"
                       value={f.amount}
                       onChange={(e) => set('amount', e.target.value)}
                     />
                   </Field>
                   <Field label="Quantity">
-                    <input
-                      type="number"
-                      min="1"
-                      value={f.qty}
-                      onChange={(e) => set('qty', e.target.value)}
-                    />
+                    {qtyControl({ value: f.qty, onChange: (v) => set('qty', v), min: 1 })}
                   </Field>
                 </div>
                 {customerFields}
@@ -1750,8 +1928,8 @@ export function Dialog() {
                   <strong>{money(outstanding(order), false, base)}</strong>
                 </div>
                 <Field label={`Payment amount (${base})`}>
-                  <input
-                    type="number"
+                  <MoneyInput
+                    currency={base}
                     required
                     step={decimalsFor(base) ? '0.01' : '1'}
                     min={decimalsFor(base) ? '0.01' : '1'}
@@ -1793,8 +1971,8 @@ export function Dialog() {
                 </p>
                 <div className="form-grid">
                   <Field label="Actual purchase cost per item">
-                    <input
-                      type="number"
+                    <MoneyInput
+                      currency={f.actualCurrency}
                       min="0"
                       required
                       value={f.actualPrice}
@@ -1896,7 +2074,11 @@ export function Dialog() {
                 </div>
                 <div className="form-grid">
                   <Field label="Buying currency" hint="What you pay in at the destination.">
-                    <select value={f.currency} onChange={(e) => set('currency', e.target.value)}>
+                    <select
+                      disabled={tripLocked}
+                      value={f.currency}
+                      onChange={(e) => set('currency', e.target.value)}
+                    >
                       {Object.keys(rates).map((c) => (
                         <option key={c}>{c}</option>
                       ))}
@@ -1905,6 +2087,7 @@ export function Dialog() {
                   <Field label="Selling currency" hint="What your customers pay in for this trip.">
                     <select
                       aria-label="Selling currency"
+                      disabled={tripLocked}
                       value={f.baseCurrency}
                       onChange={(e) => set('baseCurrency', e.target.value)}
                     >
@@ -1930,22 +2113,38 @@ export function Dialog() {
                       onChange={(e) => set('units', e.target.value)}
                     />
                   </Field>
-                  <Field label={`Planned budget (${f.baseCurrency})`}>
-                    <input
+                  <Field
+                    label={`Planned budget (${f.baseCurrency})`}
+                    hint={
+                      tripHasExpenses
+                        ? 'Follows your expenses — change it in Trip budget.'
+                        : undefined
+                    }
+                  >
+                    <MoneyInput
+                      currency={f.baseCurrency}
                       required
-                      type="number"
                       min="0"
+                      disabled={tripHasExpenses}
                       value={f.budget}
                       onChange={(e) => set('budget', e.target.value)}
                     />
                   </Field>
                 </div>
-                <Callout>
-                  1 {f.currency} ≈{' '}
-                  {money(defaultRate(f.currency, f.baseCurrency), false, f.baseCurrency)} to start —
-                  you can fine-tune the rate in Settings → Currency. The selling currency locks once
-                  the trip has items or orders. Your trip starts in Planning.
-                </Callout>
+                {editTrip ? (
+                  <Callout>
+                    {tripLocked
+                      ? 'This trip already has items, orders or expenses, so its currencies stay as they are. Everything else can change. Trips are never deleted — set the status to Closed when you’re done.'
+                      : 'Nothing is on this trip yet, so you can still change its currencies. Trips are never deleted — set the status to Closed when you’re done.'}
+                  </Callout>
+                ) : (
+                  <Callout>
+                    1 {f.currency} ≈{' '}
+                    {money(defaultRate(f.currency, f.baseCurrency), false, f.baseCurrency)} to start
+                    — you can fine-tune the rate in Settings → Currency. The selling currency locks
+                    once the trip has items or orders. Your trip starts in Planning.
+                  </Callout>
+                )}
               </>
             )}
             {step === 'budget' && (
@@ -1977,18 +2176,18 @@ export function Dialog() {
                 </Field>
                 <div className="form-grid">
                   <Field label="Planned amount">
-                    <input
+                    <MoneyInput
+                      currency={f.expenseCurrency}
                       required
-                      type="number"
                       min="1"
                       value={f.planned}
                       onChange={(e) => set('planned', e.target.value)}
                     />
                   </Field>
                   <Field label="Actual amount">
-                    <input
+                    <MoneyInput
+                      currency={f.expenseCurrency}
                       required
-                      type="number"
                       min="0"
                       value={f.actual}
                       onChange={(e) => set('actual', e.target.value)}
@@ -2423,7 +2622,9 @@ export function Dialog() {
                             : step === 'purchase'
                               ? 'Mark as purchased'
                               : step === 'trip'
-                                ? 'Create trip'
+                                ? editTrip
+                                  ? 'Save trip'
+                                  : 'Create trip'
                                 : step === 'track'
                                   ? 'Track order'
                                   : step === 'plan'

@@ -51,3 +51,7 @@ Review items still open: APK env secrets, public app URL for links in APK, per-r
 ## 2026-10-23 sprint-2-money-and-stock (ADR-009, Accepted)
 - Sprint 1 manual QA done by Kenny (deployed). Sprint 2 approved 16:26; branch `feature/sprint-2-money-and-stock` (stacked on sprint 1). Phases 1–3 written.
 - 2026-10-23 sprint 2 built (phases 4–6) on `feature/sprint-2-money-and-stock`: unit 25/25, db 4/4, e2e 28/28, integration 5/5. Needs Kenny: run migration 202610240001 → upload code → manual QA (reviews/2026-10-23-sprint-2-qa-report.md). Next: sprint 3 (close the trip, luggage planner, paste-a-chat, packing labels, receipt per store).
+
+## 2026-10-23 22:46 feedback-round-1 (APPROVED 22:56, ADR-010)
+- Kenny's 11 feedback notes + 2 principles (international-ready, first-time friendly) triaged into batches A/B/C/D; see specs/2026-10-23-feedback-round-1-triage.md. Approved with one change (return credit by amount). Branch `feature/feedback-round-1` (stacked on sprint 2).
+- 2026-10-23 built (phases 4–6): all 11 items + international settings. Local: unit 32/32, build, db 5/5, e2e 37/37, integration 5/5. Needs Kenny: migration 202610240001 (sprint 2) then 202610250001 → upload code → manual QA (reviews/2026-10-23-feedback-round-1-qa-report.md).

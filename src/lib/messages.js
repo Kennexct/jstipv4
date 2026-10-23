@@ -1,6 +1,7 @@
 // Message templates for buyers (ADR-008). Pure functions, unit-tested in tests/messages.test.js.
 // Output is plain text for the clipboard. Bawa never sends it: the seller pastes and sends.
 import { money, owed, outstanding, shippingFee } from '../money.js';
+import { activeRegion } from './region.js';
 
 export const TEMPLATE_KEYS = [
   'quote',
@@ -31,6 +32,22 @@ export const DEFAULT_TEMPLATES = {
   substitute:
     'Halo Kak {nama}, {item} untuk pesanan {order} habis. Ada pengganti: {pengganti} × {qty_baru}, totalnya {total_baru}. Mau diganti, Kak? Balas "OK" ya.',
 };
+// English defaults for sellers outside Indonesia (feedback round 1). Same placeholders.
+export const DEFAULT_TEMPLATES_EN = {
+  quote:
+    'Hi {nama}! {qty} × {item} comes to {total}. Please pay {dp} to {rekening} and reply "OK" to confirm. Order code {order}.',
+  reminder:
+    'Hi {nama}, a friendly reminder that {sisa} is still due for order {order} ({item}). Please pay to {rekening}. Thank you!',
+  status: 'Hi {nama}, your order {order} ({item}) is now {status}. Check it here: {link_lacak}',
+  shipped:
+    'Hi {nama}, order {order} is on its way with {kurir}, tracking {resi}. Follow it here: {link_lacak}. Thanks for shopping with us!',
+  unavailable:
+    'Hi {nama}, we’re sorry — {item} for order {order} is sold out at the store. {penyelesaian} Thank you for understanding.',
+  substitute:
+    'Hi {nama}, {item} for order {order} is sold out. We can get {pengganti} × {qty_baru} instead, for {total_baru}. Would you like that? Reply "OK".',
+};
+export const defaultTemplates = (language) =>
+  language === 'en' ? DEFAULT_TEMPLATES_EN : DEFAULT_TEMPLATES;
 export const PLACEHOLDERS = [
   ['{nama}', 'Buyer’s first name'],
   ['{item}', 'Item name'],
@@ -50,6 +67,16 @@ export const PLACEHOLDERS = [
   ['{qty_baru}', 'Substitute quantity'],
   ['{total_baru}', 'Substitute total'],
 ];
+const STATUS_EN = {
+  Requested: 'waiting for a quote',
+  Quoted: 'quoted',
+  Confirmed: 'confirmed',
+  Paid: 'paid',
+  Purchased: 'bought',
+  Shipped: 'shipped',
+  Delivered: 'delivered',
+  Cancelled: 'cancelled',
+};
 const STATUS_ID = {
   Requested: 'menunggu penawaran',
   Quoted: 'sudah ditawarkan',
@@ -69,7 +96,10 @@ export function bankLine(bank = {}) {
 }
 
 // Values for every placeholder of one order. Missing values become '' and are tidied away.
-export function orderValues(order, { currency = 'IDR', bank, trackingLink = '', extra = {} } = {}) {
+export function orderValues(
+  order,
+  { currency = 'IDR', bank, trackingLink = '', extra = {}, language = 'id' } = {},
+) {
   const total = Number(order.total) || 0,
     paid = Number(order.paid) || 0,
     deposit = Number(order.deposit) || 0;
@@ -81,7 +111,9 @@ export function orderValues(order, { currency = 'IDR', bank, trackingLink = '', 
     dp: deposit > 0 ? money(deposit, false, currency) : money(total, false, currency),
     sisa: money(outstanding(order), false, currency),
     ongkir: shippingFee(order) ? money(shippingFee(order), false, currency) : '',
-    status: STATUS_ID[order.status] || (order.status || '').toLowerCase(),
+    status:
+      (language === 'en' ? STATUS_EN : STATUS_ID)[order.status] ||
+      (order.status || '').toLowerCase(),
     order: order.id || '',
     rekening: bankLine(bank),
     kurir: order.courier || '',
@@ -101,18 +133,24 @@ export function renderTemplate(template, values) {
     .trim();
 }
 
-export const templatesOf = (messaging) => ({
-  ...DEFAULT_TEMPLATES,
+export const templatesOf = (messaging, language = 'id') => ({
+  ...defaultTemplates(language),
   ...Object.fromEntries(
     Object.entries(messaging?.templates || {}).filter(([k, v]) => TEMPLATE_KEYS.includes(k) && v),
   ),
 });
 
 export function orderMessage(kind, order, options = {}) {
-  const template = templatesOf(options.messaging)[kind];
+  const language = options.language || activeRegion().language;
+  const template = templatesOf(options.messaging, language)[kind];
   return renderTemplate(
     template,
-    orderValues(order, { ...options, bank: options.messaging?.bank, extra: options.extra || {} }),
+    orderValues(order, {
+      ...options,
+      language,
+      bank: options.messaging?.bank,
+      extra: options.extra || {},
+    }),
   );
 }
 
@@ -122,19 +160,7 @@ export const trackingLink = (base, slug, order) =>
     ? `${base}#Storefront/${encodeURIComponent(slug)}/track/${order.trackingToken}`
     : '';
 
-export const COURIERS = [
-  'JNE',
-  'J&T',
-  'SiCepat',
-  'AnterAja',
-  'Ninja',
-  'POS',
-  'GoSend',
-  'GrabExpress',
-  'Pickup',
-  'Other',
-];
-export const resiOptional = (courier) => ['Pickup', 'GoSend', 'GrabExpress'].includes(courier);
+// Couriers are the seller's own list now (lib/region.js), not a fixed Indonesian one.
 export const normaliseResi = (value) => (value || '').trim().toUpperCase();
 export const validResi = (value) => /^[A-Z0-9-]{4,40}$/.test(normaliseResi(value));
 // Matches the server: purchased (or already shipped) and fully paid.

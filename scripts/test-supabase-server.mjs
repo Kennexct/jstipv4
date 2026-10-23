@@ -46,6 +46,9 @@ const args = {
     'p_note',
   ],
   jastip_buyer_credits: ['p_workspace'],
+  jastip_settings: ['p_workspace'],
+  jastip_save_settings: ['p_workspace', 'p_value'],
+  jastip_return_credit: ['p_workspace', 'p_revision', 'p_order_id', 'p_amount'],
 };
 const emails = [];
 const jsonArgs = new Set(['p_changes', 'p_shop', 'p_order', 'p_value', 'p_shipments', 'p_change']);

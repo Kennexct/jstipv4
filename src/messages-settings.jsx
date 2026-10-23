@@ -5,7 +5,7 @@ import { Field, Callout, SaveBar } from './ui';
 import {
   TEMPLATE_KEYS,
   TEMPLATE_LABELS,
-  DEFAULT_TEMPLATES,
+  defaultTemplates,
   PLACEHOLDERS,
   templatesOf,
   orderMessage,
@@ -25,25 +25,27 @@ const sampleOrder = {
   resi: 'JNE0123456789',
 };
 
-const draftOf = (messaging) => ({
-  templates: templatesOf(messaging),
+const draftOf = (messaging, language) => ({
+  templates: templatesOf(messaging, language),
   bank: { bank: '', number: '', holder: '', ...(messaging?.bank || {}) },
 });
 
 export function MessagesSettings() {
-  const { messaging, saveMessaging, role, support, data } = useOps();
+  const { messaging, saveMessaging, role, support, data, region } = useOps();
+  const language = region.language,
+    defaults = defaultTemplates(language);
   const canEdit = role !== 'Helper' && !support;
-  const [draft, setDraft] = useState(() => draftOf(messaging)),
+  const [draft, setDraft] = useState(() => draftOf(messaging, language)),
     [touched, setTouched] = useState(false),
     [preview, setPreview] = useState('quote'),
     [saving, setSaving] = useState(false),
     [error, setError] = useState('');
-  const saved = JSON.stringify(draftOf(messaging));
+  const saved = JSON.stringify(draftOf(messaging, language));
   const dirty = touched && JSON.stringify(draft) !== saved;
   useUnsavedChanges('messages-settings', dirty);
   useEffect(() => {
-    if (!touched) setDraft(draftOf(messaging));
-  }, [saved]);
+    if (!touched) setDraft(draftOf(messaging, language));
+  }, [saved, language]);
   const edit = (fn) => {
     setTouched(true);
     setDraft((d) => fn(structuredClone(d)));
@@ -57,7 +59,7 @@ export function MessagesSettings() {
     setSaving(true);
     // Only store templates that differ from the defaults, so improved defaults reach everyone.
     const templates = Object.fromEntries(
-      TEMPLATE_KEYS.filter((k) => draft.templates[k].trim() !== DEFAULT_TEMPLATES[k]).map((k) => [
+      TEMPLATE_KEYS.filter((k) => draft.templates[k].trim() !== defaults[k]).map((k) => [
         k,
         draft.templates[k].trim(),
       ]),
@@ -66,7 +68,7 @@ export function MessagesSettings() {
     setSaving(false);
   };
   const discard = () => {
-    setDraft(draftOf(messaging));
+    setDraft(draftOf(messaging, language));
     setTouched(false);
     setError('');
   };
@@ -74,6 +76,7 @@ export function MessagesSettings() {
     messaging: draft,
     currency: data.trips[0]?.baseCurrency || 'IDR',
     trackingLink: 'https://…/track/…',
+    language,
   });
   return (
     <>
@@ -154,7 +157,7 @@ export function MessagesSettings() {
               <button
                 type="button"
                 className="text-btn"
-                onClick={() => edit((d) => ((d.templates = { ...DEFAULT_TEMPLATES }), d))}
+                onClick={() => edit((d) => ((d.templates = { ...defaults }), d))}
               >
                 Restore default templates
               </button>

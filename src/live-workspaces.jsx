@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { MoneyInput } from './money-input';
 import { useOps } from './store';
 import { Header, Button, Stats, Badge, Field, Empty, Callout } from './ui';
 import { planDetails } from './data';
@@ -280,11 +281,10 @@ export function ManualInvoice({ merchant, onDone }) {
       }}
     >
       <Field label="Verified payment amount (IDR)">
-        <input
+        <MoneyInput
+          currency={'IDR'}
           required
-          type="number"
           min="1"
-          step="1"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
         />

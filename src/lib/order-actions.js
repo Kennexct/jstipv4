@@ -1,16 +1,19 @@
-// Order money actions (ADR-009). Pure functions that mirror the server RPCs
-// (jastip_order_unavailable, jastip_order_refund, jastip_use_credit, jastip_substitute_order).
+// Order money actions (ADR-009, ADR-010). Pure functions that mirror the server RPCs
+// (jastip_order_unavailable, jastip_order_refund, jastip_use_credit, jastip_substitute_order,
+// jastip_return_credit).
 // Demo mode applies them locally; unit tests keep both sides honest. Errors use the server's words.
 import { depositFor, isUnlimited } from '../money.js';
 
-// Digits only; a local Indonesian number (0812…) counts the same as +62 812… (matches jastip.phone_key).
-export const phoneKey = (p) =>
+// Digits only; a local number (0812…) counts the same as the international form, using the
+// workspace calling code (matches jastip.phone_key). Default 62 keeps existing keys valid.
+export const phoneKey = (p, callingCode = '62') =>
   String(p || '')
     .replace(/\D/g, '')
-    .replace(/^0/, '62');
-export const creditBalance = (credits = [], phone) =>
+    .replace(/^0/, callingCode || '62');
+const ccOf = (data) => data?.settings?.region?.callingCode || '62';
+export const creditBalance = (credits = [], phone, callingCode) =>
   credits
-    .filter((c) => c.phone === phoneKey(phone))
+    .filter((c) => c.phone === phoneKey(phone, callingCode))
     .reduce((sum, c) => sum + Number(c.amount || 0), 0);
 export const creditBalances = (credits = []) => {
   const map = new Map();
@@ -21,7 +24,12 @@ const today = () => new Date().toISOString().slice(0, 10);
 const line = (amount, type, note = '') => ({
   amount,
   type,
-  method: { refund: 'Refund', credit: 'Credit issued', 'credit-use': 'Credit' }[type],
+  method: {
+    refund: 'Refund',
+    credit: 'Credit issued',
+    'credit-use': 'Credit',
+    'credit-return': 'Credit returned',
+  }[type],
   date: today(),
   note: String(note || '')
     .trim()
@@ -31,7 +39,7 @@ const fail = (message) => {
   throw Error(message);
 };
 const orderOf = (data, id) => data.orders.find((o) => o.id === id) || fail('Order not found.');
-const hasPhone = (o) => phoneKey(o.phone).length >= 8;
+const hasPhone = (o, cc) => phoneKey(o.phone, cc).length >= 8;
 const moveStock = (items, itemId, delta) => {
   if (!itemId || !delta) return items;
   return items.map((i) => {
@@ -45,9 +53,9 @@ const replace = (data, order, extra = {}) => ({
   ...extra,
   orders: data.orders.map((o) => (o.id === order.id ? order : o)),
 });
-const issue = (credits, o, amount, note) =>
+const issue = (credits, o, amount, note, cc) =>
   amount > 0
-    ? [...credits, { phone: phoneKey(o.phone), amount, kind: 'issue', orderId: o.id, note }]
+    ? [...credits, { phone: phoneKey(o.phone, cc), amount, kind: 'issue', orderId: o.id, note }]
     : credits;
 
 export function applyUnavailable(data, id, mode, note = '') {
@@ -56,7 +64,7 @@ export function applyUnavailable(data, id, mode, note = '') {
     fail('Only orders that are not bought yet can be marked unavailable.');
   if (!['refund', 'credit'].includes(mode)) fail('Choose refund or credit.');
   const amount = Number(old.paid) || 0;
-  if (mode === 'credit' && amount > 0 && !hasPhone(old))
+  if (mode === 'credit' && amount > 0 && !hasPhone(old, ccOf(data)))
     fail('This buyer has no WhatsApp number to keep credit under.');
   const order = {
     ...old,
@@ -68,7 +76,10 @@ export function applyUnavailable(data, id, mode, note = '') {
   };
   return replace(data, order, {
     items: moveStock(data.items, old.itemId, Number(old.qty) || 0),
-    credits: mode === 'credit' ? issue(data.credits || [], old, amount, note) : data.credits || [],
+    credits:
+      mode === 'credit'
+        ? issue(data.credits || [], old, amount, note, ccOf(data))
+        : data.credits || [],
   });
 }
 
@@ -83,7 +94,7 @@ export function applyRefund(data, id, amount, mode, note = '') {
   amount = Number(amount);
   if (!(amount > 0) || amount > paid)
     fail(`Enter an amount between 0 and what was paid (${paid}).`);
-  if (mode === 'credit' && !hasPhone(old))
+  if (mode === 'credit' && !hasPhone(old, ccOf(data)))
     fail('This buyer has no WhatsApp number to keep credit under.');
   if (!String(note).trim()) fail('Add a short reason for the refund.');
   const entry = {
@@ -92,7 +103,10 @@ export function applyRefund(data, id, amount, mode, note = '') {
   };
   const order = { ...old, paid: paid - amount, payments: [...(old.payments || []), entry] };
   return replace(data, order, {
-    credits: mode === 'credit' ? issue(data.credits || [], old, amount, note) : data.credits || [],
+    credits:
+      mode === 'credit'
+        ? issue(data.credits || [], old, amount, note, ccOf(data))
+        : data.credits || [],
   });
 }
 
@@ -103,7 +117,7 @@ export function applyUseCredit(data, id, amount) {
   const paid = Number(old.paid) || 0,
     total = Number(old.total) || 0,
     due = total + (Number(old.shippingFee) || 0) - paid,
-    balance = creditBalance(data.credits, old.phone);
+    balance = creditBalance(data.credits, old.phone, ccOf(data));
   amount = Number(amount);
   if (!(amount > 0)) fail('Enter a credit amount.');
   if (amount > balance) fail(`Only ${balance} credit is available for this buyer.`);
@@ -119,7 +133,42 @@ export function applyUseCredit(data, id, amount) {
   return replace(data, order, {
     credits: [
       ...(data.credits || []),
-      { phone: phoneKey(old.phone), amount: -amount, kind: 'use', orderId: old.id },
+      { phone: phoneKey(old.phone, ccOf(data)), amount: -amount, kind: 'use', orderId: old.id },
+    ],
+  });
+}
+
+// Credit used on an order goes back to the buyer's balance, any amount up to what was used
+// (feedback round 1). A paid order that drops below its total reopens as Confirmed.
+export const creditUsed = (o) =>
+  (o.payments || [])
+    .filter((p) => ['credit-use', 'credit-return'].includes(p.type))
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+export function applyReturnCredit(data, id, amount) {
+  const old = orderOf(data, id);
+  if (['Shipped', 'Delivered', 'Cancelled'].includes(old.status))
+    fail('Credit can only be returned before the order ships.');
+  const used = creditUsed(old);
+  amount = Number(amount);
+  if (!(amount > 0)) fail('Enter how much credit to return.');
+  if (amount > used) fail(`Only ${used} of credit was used on this order.`);
+  const paid = (Number(old.paid) || 0) - amount;
+  const order = {
+    ...old,
+    paid,
+    payments: [...(old.payments || []), line(-amount, 'credit-return')],
+    ...(old.status === 'Paid' && paid < Number(old.total) ? { status: 'Confirmed' } : {}),
+  };
+  return replace(data, order, {
+    credits: [
+      ...(data.credits || []),
+      {
+        phone: phoneKey(old.phone, ccOf(data)),
+        amount,
+        kind: 'issue',
+        orderId: old.id,
+        note: 'Returned from ' + old.id,
+      },
     ],
   });
 }
@@ -189,14 +238,14 @@ export function applySubstitute(data, id, change, excessMode, note = '') {
   if (excess > 0) {
     if (!['refund', 'credit'].includes(excessMode))
       fail(`Choose refund or credit for the extra ${excess} already paid.`);
-    if (excessMode === 'credit' && !hasPhone(old))
+    if (excessMode === 'credit' && !hasPhone(old, ccOf(data)))
       fail('This buyer has no WhatsApp number to keep credit under.');
     order = {
       ...order,
       paid: old.paid - excess,
       payments: [...(old.payments || []), line(-excess, excessMode, 'Substitute: ' + note)],
     };
-    if (excessMode === 'credit') credits = issue(credits, old, excess, 'Substitute');
+    if (excessMode === 'credit') credits = issue(credits, old, excess, 'Substitute', ccOf(data));
   }
   if (old.status === 'Paid' && Number(order.paid) < total) order.status = 'Confirmed';
   return replace(data, order, { items, credits });

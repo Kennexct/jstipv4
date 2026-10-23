@@ -549,7 +549,7 @@ test('ongkir is added after packing and must be paid before shipping', async ({ 
   await page.getByLabel('Update order status').selectOption('Shipped');
   // Shipping is blocked until the ongkir is paid; the payment form opens with it filled in.
   await expect(page.getByText('Record the full payment before shipping.')).toBeVisible();
-  await expect(page.getByLabel(/Payment amount/)).toHaveValue('20000');
+  await expect(page.getByLabel(/Payment amount/)).toHaveValue('20.000');
   await page.getByRole('button', { name: 'Record payment', exact: true }).last().click();
   await page.getByLabel('Update order status').selectOption('Shipped');
   await expect(page.getByRole('dialog', { name: 'Mark as shipped' })).toBeVisible();
@@ -591,4 +591,196 @@ test('needs-you-today lists waiting orders and storefront shows the PO deadline'
   await expect(
     page.locator('.store-product').filter({ hasText: 'Matcha ceremonial blend' }),
   ).toContainText(/PO closes (in 2 days|tomorrow)/);
+});
+
+test('order form suggests past customers, shows stock left and steps quantity', async ({
+  page,
+}) => {
+  await page.goto('/#Orders');
+  await page.getByRole('button', { name: 'Add order', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Customer name').fill('nad');
+  await dialog.getByRole('option', { name: /Nadia Putri/ }).click();
+  await expect(dialog.getByLabel('Customer name')).toHaveValue('Nadia Putri');
+  await expect(dialog.getByLabel('WhatsApp number')).toHaveValue('+6281234567890');
+  await expect(dialog.getByLabel('Delivery address')).toHaveValue(/Kemang/);
+  await expect(
+    dialog.locator('.field small', { hasText: /\d+ left|No stock limit/ }),
+  ).toBeVisible();
+  const qty = dialog.getByLabel('Quantity', { exact: true });
+  await expect(qty).toHaveValue('1');
+  await dialog.getByRole('button', { name: 'Increase' }).click();
+  await expect(qty).toHaveValue('2');
+  // Tapping the number selects it, so typing replaces instead of appending.
+  await qty.click();
+  await page.keyboard.type('3');
+  await expect(qty).toHaveValue('3');
+});
+
+test('ongoing trips can be edited but their currencies lock once used', async ({ page }) => {
+  await page.goto('/#Trips');
+  await page.getByRole('button', { name: 'Edit trip' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: 'Edit trip' })).toBeVisible();
+  await expect(dialog.getByLabel('Selling currency')).toBeDisabled();
+  await dialog.getByLabel('Delivery hub').fill('Surabaya');
+  await dialog.getByRole('button', { name: 'Save trip' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText(/→ Surabaya/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /Delete/ })).toHaveCount(0);
+});
+
+test('the bottom-bar plus opens quick actions on phones and tablets', async ({ page }) => {
+  for (const width of [390, 1024]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/#Orders');
+    await page.getByRole('button', { name: 'Quick add' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Quick actions' });
+    // The page's own action comes first.
+    await expect(sheet.getByRole('button').nth(1)).toContainText('Add order');
+    await page.keyboard.press('Escape');
+    await expect(sheet).toHaveCount(0);
+  }
+  await page.getByRole('button', { name: 'Quick add' }).click();
+  await page.getByRole('button', { name: /Record payment/ }).click();
+  await expect(page.getByRole('button', { name: 'Unpaid', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.getByRole('button', { name: 'Quick add' })).toBeHidden();
+});
+
+test('credit used on an order can be returned in part', async ({ page }) => {
+  await page.goto('/#Purchasing');
+  await page
+    .locator('.purchase-row')
+    .filter({ hasText: 'Aditya' })
+    .getByRole('button', { name: 'Can’t buy' })
+    .click();
+  const unavailable = page.getByRole('dialog', { name: 'Item unavailable' });
+  await unavailable.getByLabel('Keep as credit').check();
+  await unavailable.getByRole('button', { name: 'Cancel order' }).click();
+  await page.goto('/#Orders');
+  await page.getByRole('button', { name: 'Add order', exact: true }).click();
+  const form = page.getByRole('dialog');
+  await form.getByLabel('Customer name').fill('Aditya');
+  await form.getByRole('option', { name: /Aditya Pratama/ }).click();
+  await form.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(form).toHaveCount(0);
+  await page
+    .locator('tr')
+    .filter({ hasText: 'Aditya Pratama' })
+    .filter({ hasNotText: 'Cancelled' })
+    .getByText('Aditya Pratama', { exact: true })
+    .click();
+  await page.getByLabel('Update order status').selectOption('Confirmed');
+  await page.getByRole('button', { name: 'Use credit' }).click();
+  await page
+    .getByRole('dialog', { name: 'Pay with credit' })
+    .getByRole('button', { name: 'Use credit' })
+    .click();
+  await page.getByRole('button', { name: 'Return credit' }).click();
+  const back = page.getByRole('dialog', { name: 'Return credit' });
+  await back.getByLabel(/Amount to return/).fill('100000');
+  await expect(back).toContainText('balance goes up by Rp 100.000');
+  await back.getByRole('button', { name: 'Return credit' }).click();
+  await expect(page.getByText('Rp 100.000 credit returned to Aditya.')).toBeVisible();
+  await expect(page.locator('.ledger')).toContainText('Credit returned');
+});
+
+test('couriers and region are the seller’s own, and a new courier can be added while shipping', async ({
+  page,
+}) => {
+  await page.goto('/#Settings');
+  await page.getByRole('button', { name: 'Shipping & region' }).click();
+  await page.getByLabel('Country').selectOption('SG');
+  await expect(page.getByLabel('Calling code')).toHaveValue('65');
+  await expect(page.getByLabel('Message language')).toHaveValue('en');
+  await page.getByRole('button', { name: 'Use the usual list for Singapore' }).click();
+  await page.getByLabel('New courier').fill('Ninja Van');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Shipping and region saved.')).toBeVisible();
+  await page.goto('/#Orders');
+  await page.getByText('Dewi Anggraini', { exact: true }).click();
+  await page.getByLabel('Update order status').selectOption('Shipped');
+  const ship = page.getByRole('dialog', { name: 'Mark as shipped' });
+  await expect(ship.getByLabel('Courier').locator('option')).toContainText([
+    'Local courier',
+    'Ninja Van',
+  ]);
+  await ship.getByLabel('Courier').selectOption('__new');
+  await ship.getByLabel('New courier name').fill('Uncle Lim Van');
+  await ship.getByLabel('Uses tracking numbers').uncheck();
+  await ship.getByRole('button', { name: 'Mark shipped' }).click();
+  await expect(page.getByRole('dialog', { name: 'Order shipped' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Order shipped' })).toContainText('Uncle Lim Van');
+  await page.goto('/#Settings');
+  await page.getByRole('button', { name: 'Shipping & region' }).click();
+  await expect(
+    page.getByLabel('Your couriers').locator('input[type=text], input:not([type])'),
+  ).toHaveCount(6);
+});
+
+test('amount fields show thousand separators for the currency', async ({ page }) => {
+  await page.goto('/#Items');
+  await page.getByRole('button', { name: 'Add item', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  const price = dialog.getByLabel('Purchase price', { exact: true });
+  await price.fill('');
+  await price.pressSequentially('1250000');
+  await expect(price).toHaveValue('1,250,000');
+});
+
+test('items list view changes status inline and in bulk', async ({ page }) => {
+  await page.goto('/#Items');
+  await page.getByRole('button', { name: 'List', exact: true }).click();
+  const first = page.locator('.items-table tbody tr').first();
+  const name = (await first.locator('.item-row-name > span').last().innerText()).split('\n')[0];
+  await first.getByLabel(/^Status of/).selectOption('Draft');
+  await expect(page.getByText(`${name} is now Draft.`)).toBeVisible();
+  await page.getByLabel('Select all items').check();
+  await page.getByLabel('New status for selected items').selectOption('Pre-order');
+  await page.getByRole('button', { name: 'Set status' }).click();
+  await expect(page.getByText(/items set to Pre-order\./)).toBeVisible();
+  // The list view is remembered.
+  await page.reload();
+  await expect(page.locator('.items-table')).toBeVisible();
+});
+
+test('an item can be copied to another trip with a currency hint', async ({ page }) => {
+  await page.goto('/#Items');
+  await page
+    .getByRole('button', { name: /^Copy .* to another trip$/ })
+    .first()
+    .click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: 'Copy item to a trip' })).toBeVisible();
+  await expect(dialog).toContainText('stock starts fresh');
+  const hint = dialog.locator('.callout').filter({ hasText: 'buys in' });
+  if (await hint.count()) {
+    const target = (await hint.innerText()).match(/buys in ([A-Z]{3})/)[1];
+    await hint.getByRole('button', { name: `Use ${target}` }).click();
+    await expect(dialog.getByLabel('Purchase currency')).toHaveValue(target);
+  }
+  await dialog
+    .getByRole('button', { name: /Post item|Save/ })
+    .last()
+    .click();
+  await expect(dialog).toHaveCount(0);
+});
+
+test('the order form lets you pick an item by photo', async ({ page }) => {
+  await page.goto('/#Orders');
+  await page.getByRole('button', { name: 'Add order', exact: true }).click();
+  const picker = page.getByRole('group', { name: 'Pick an item by photo' });
+  const choice = picker
+    .getByRole('button')
+    .filter({ hasNot: page.locator(':disabled') })
+    .nth(1);
+  const label = await choice.locator('strong').innerText();
+  await choice.click();
+  await expect(choice).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('dialog').getByLabel('Item', { exact: true })).toContainText(label);
 });

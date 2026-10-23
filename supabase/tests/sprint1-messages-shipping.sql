@@ -59,8 +59,8 @@ do $$declare d jsonb;o jsonb;begin
 -- Validation: courier list, resi format, stale revision, batch size.
 do $$declare d jsonb:=public.jastip_load_workspace(current_setting('t.w')::uuid);id text:=d->'orders'->0->>'id';q text;begin
  q:='select public.jastip_ship_orders(%L,%s,%L::jsonb)';
- perform public.test_denied(format(q,current_setting('t.w'),d->>'revision',jsonb_build_array(jsonb_build_object('id',id,'courier','DHL Moon','resi','X1234'))::text),'Choose a courier');
- perform public.test_denied(format(q,current_setting('t.w'),d->>'revision',jsonb_build_array(jsonb_build_object('id',id,'courier','JNE','resi',''))::text),'Enter the resi');
+ perform public.test_denied(format(q,current_setting('t.w'),d->>'revision',jsonb_build_array(jsonb_build_object('id',id,'courier','<b>Moon</b>','resi','X1234'))::text),'Choose a courier');
+ perform public.test_denied(format(q,current_setting('t.w'),d->>'revision',jsonb_build_array(jsonb_build_object('id',id,'courier','JNE','resi',''))::text),'Enter the tracking number');
  perform public.test_denied(format(q,current_setting('t.w'),d->>'revision',jsonb_build_array(jsonb_build_object('id',id,'courier','JNE','resi','<script>'))::text),'letters, numbers and dashes');
  perform public.test_denied(format(q,current_setting('t.w'),(d->>'revision')::bigint-1,jsonb_build_array(jsonb_build_object('id',id,'courier','JNE','resi','JNE123456'))::text),'Another user changed');
  perform public.test_denied(format(q,current_setting('t.w'),d->>'revision','[]'),'between 1 and 100');

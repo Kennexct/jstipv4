@@ -4,6 +4,7 @@ import { emptyWorkspace, recordId, csvCell } from './lib/records';
 import { loadWorkspace, loadStorefront, commitWorkspace, adminAction } from './lib/repository';
 import { canShip, shipBlocker, normaliseResi } from './lib/messages';
 import { creditBalances, phoneKey } from './lib/order-actions';
+import { regionOf, couriersOf, findCourier, applySettings, setActiveRegion } from './lib/region';
 import { owed } from './money';
 const Context = createContext(null);
 export const useOps = () => useContext(Context);
@@ -45,7 +46,8 @@ export function Provider({ children, initialSeed }) {
     [routeLoading, setRouteLoading] = useState(false),
     [confirm, setConfirm] = useState(null),
     [savedMessaging, setSavedMessaging] = useState(null),
-    [savedCredits, setSavedCredits] = useState([]);
+    [savedCredits, setSavedCredits] = useState([]),
+    [savedSettings, setSavedSettings] = useState(null);
   const dataRef = useRef(data),
     supportRef = useRef(support),
     busyRef = useRef(false),
@@ -562,18 +564,68 @@ export function Provider({ children, initialSeed }) {
       });
     return saved;
   };
-  // Message templates (ADR-008): one workspace-level setting, read by every member.
-  useEffect(() => {
-    if (demoMode || connection !== 'ready' || !data.workspaceId || mode !== 'seller') return;
+  // Workspace settings (ADR-008, ADR-010): message templates, couriers and region, read by every
+  // member. Falls back to the sprint 1 messaging RPC until migration 202610250001 is applied.
+  const loadSettings = () => {
     let stale = false;
-    rpc('jastip_messaging', { p_workspace: data.workspaceId })
-      .then((value) => !stale && setSavedMessaging(value || {}))
-      .catch(() => !stale && setSavedMessaging({ unavailable: true }));
+    rpc('jastip_settings', { p_workspace: data.workspaceId })
+      .then((value) => {
+        if (stale) return;
+        setSavedMessaging(value?.messaging || {});
+        setSavedSettings(value || {});
+      })
+      .catch(() =>
+        rpc('jastip_messaging', { p_workspace: data.workspaceId })
+          .then((value) => !stale && setSavedMessaging(value || {}))
+          .catch(() => !stale && setSavedMessaging({ unavailable: true }))
+          .finally(() => !stale && setSavedSettings({ unavailable: true })),
+      );
     return () => {
       stale = true;
     };
+  };
+  useEffect(() => {
+    if (demoMode || connection !== 'ready' || !data.workspaceId || mode !== 'seller') return;
+    return loadSettings();
   }, [connection, data.workspaceId, mode]);
   const messaging = demoMode ? data.messaging || {} : savedMessaging || {};
+  const settings = demoMode
+    ? { ...(data.settings || {}), hasCredits: (data.credits || []).length > 0 }
+    : savedSettings || {};
+  const region = regionOf(settings),
+    couriers = couriersOf(settings);
+  setActiveRegion(region);
+  const saveSettings = async (value) => {
+    if (supportRef.current) {
+      announce('Support view is read-only. Exit support view to edit.');
+      return false;
+    }
+    if (demoMode) {
+      try {
+        const next = applySettings(settings, value);
+        return change(
+          (d) => ({ ...d, settings: { couriers: next.couriers, region: next.region } }),
+          'Shipping and region saved.',
+        );
+      } catch (e) {
+        announce('Changes were not saved: ' + e.message);
+        return false;
+      }
+    }
+    try {
+      const next = await rpc('jastip_save_settings', {
+        p_workspace: data.workspaceId,
+        p_value: value,
+      });
+      setSavedSettings(next);
+      setSavedMessaging(next?.messaging || {});
+      announce('Shipping and region saved.');
+      return true;
+    } catch (e) {
+      announce('Changes were not saved: ' + e.message);
+      return false;
+    }
+  };
   // Buyer credit balances (ADR-009), keyed by WhatsApp digits.
   const loadCredits = () =>
     !demoMode &&
@@ -587,7 +639,7 @@ export function Provider({ children, initialSeed }) {
   }, [connection, data.workspaceId, mode, data.revision]);
   const credits = demoMode ? creditBalances(data.credits) : savedCredits;
   const creditFor = (phone) =>
-    Number(credits.find((c) => c.phone === phoneKey(phone))?.balance) || 0;
+    Number(credits.find((c) => c.phone === phoneKey(phone, region.callingCode))?.balance) || 0;
   // One path for the money actions: RPC when live, the same rules locally in demo mode.
   const orderAction = async (rpcName, args, demoFn, label) => {
     if (supportRef.current) {
@@ -654,17 +706,29 @@ export function Provider({ children, initialSeed }) {
       announce('Only purchased, fully paid orders can be shipped.');
       return false;
     }
+    const fresh = list.find((s) => s.courier && !findCourier(couriers, s.courier));
     if (demoMode || supportRef.current)
       return change(
         (d) => ({
           ...d,
+          ...(fresh
+            ? {
+                settings: {
+                  ...(d.settings || {}),
+                  couriers: [
+                    ...couriers,
+                    { name: fresh.courier.trim(), tracking: fresh.tracking !== false },
+                  ],
+                },
+              }
+            : {}),
           orders: d.orders.map((o) => {
             const s = list.find((x) => x.id === o.id);
             return s
               ? {
                   ...o,
                   status: 'Shipped',
-                  courier: s.courier,
+                  courier: findCourier(couriers, s.courier)?.name || s.courier.trim(),
                   resi: s.resi,
                   shippedAt: o.shippedAt || new Date().toISOString(),
                 }
@@ -687,6 +751,7 @@ export function Provider({ children, initialSeed }) {
       });
       install({ ...result, preferences: dataRef.current.preferences });
       announce(label);
+      if (fresh) loadSettings();
       return true;
     } catch (e) {
       announce('Not shipped: ' + e.message);
@@ -703,6 +768,10 @@ export function Provider({ children, initialSeed }) {
         data,
         messaging,
         saveMessaging,
+        settings,
+        region,
+        couriers,
+        saveSettings,
         shipOrders,
         credits,
         creditFor,

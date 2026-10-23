@@ -81,6 +81,9 @@ import {
   TrendingDown,
   Clock,
   Truck,
+  Minus,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
 const icons = {
   Circle,
@@ -160,6 +163,9 @@ const icons = {
   TrendingDown,
   Clock,
   Truck,
+  Minus,
+  LayoutGrid,
+  List,
 };
 export const navIcons = {
   Overview: 'LayoutDashboard',
@@ -228,7 +234,7 @@ export function Field({ label, children, hint }) {
   const enhance = (n) =>
     React.Children.map(n, (c) => {
       if (!React.isValidElement(c)) return c;
-      if (['input', 'select', 'textarea'].includes(c.type) && !assigned) {
+      if ((['input', 'select', 'textarea'].includes(c.type) || c.type?.fieldInput) && !assigned) {
         assigned = true;
         return React.cloneElement(c, {
           id,
@@ -328,7 +334,12 @@ export function Tabs({ options, value, onChange }) {
   return (
     <div className="tabs">
       {options.map((s) => (
-        <button key={s} className={s === value ? 'active' : ''} onClick={() => onChange(s)}>
+        <button
+          key={s}
+          className={s === value ? 'active' : ''}
+          aria-pressed={s === value}
+          onClick={() => onChange(s)}
+        >
           {s}
         </button>
       ))}

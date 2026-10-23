@@ -1,21 +1,31 @@
 // Money and stock actions on an order (sprint 2, ADR-009): item unavailable, substitute,
 // refund or credit, and paying with credit. Live mode calls the RPCs; demo mode applies the
 // same rules from lib/order-actions. Messages are copied for the seller to send.
+import { MoneyInput } from './money-input';
 import React, { useState } from 'react';
 import { useOps, useUnsavedChanges } from './store';
 import { Button, Field, Callout } from './ui';
 import { Frame } from './dialog-frame';
 import { money, currencyOf, outstanding, roundTo, decimalsFor } from './money';
 import { orderMessage } from './lib/messages';
+import { activeRegion } from './lib/region';
 import {
   applyUnavailable,
   applyRefund,
   applyUseCredit,
   applySubstitute,
+  applyReturnCredit,
+  creditUsed,
   phoneKey,
 } from './lib/order-actions';
 
-export const moneyDialogTypes = ['unavailable', 'refund', 'substitute', 'use-credit'];
+export const moneyDialogTypes = [
+  'unavailable',
+  'refund',
+  'substitute',
+  'use-credit',
+  'return-credit',
+];
 
 export function MoneyDialog() {
   const { dialog, data } = useOps();
@@ -26,6 +36,7 @@ export function MoneyDialog() {
     refund: Refund,
     substitute: Substitute,
     'use-credit': UseCredit,
+    'return-credit': ReturnCredit,
   }[dialog.type];
   return <View order={order} />;
 }
@@ -71,7 +82,7 @@ function Unavailable({ order: o }) {
   const { data, setDialog, orderAction, copy, messaging, pending } = useOps();
   const cur = currencyOf(o, data.trips),
     paid = Number(o.paid) || 0,
-    canCredit = phoneKey(o.phone).length >= 8;
+    canCredit = phoneKey(o.phone, activeRegion().callingCode).length >= 8;
   const [mode, setMode] = useState(paid > 0 && canCredit ? 'credit' : 'refund'),
     [note, setNote] = useState('');
   useUnsavedChanges('unavailable', !!note.trim());
@@ -80,8 +91,12 @@ function Unavailable({ order: o }) {
     paid <= 0
       ? ''
       : mode === 'credit'
-        ? `Dana ${money(paid, false, cur)} kami simpan sebagai saldo untuk pesanan Kakak berikutnya.`
-        : `Dana ${money(paid, false, cur)} akan kami kembalikan ke rekening Kakak.`;
+        ? activeRegion().language === 'en'
+          ? `We’ll keep ${money(paid, false, cur)} as credit for your next order.`
+          : `Dana ${money(paid, false, cur)} kami simpan sebagai saldo untuk pesanan Kakak berikutnya.`
+        : activeRegion().language === 'en'
+          ? `We’ll refund ${money(paid, false, cur)} to your account.`
+          : `Dana ${money(paid, false, cur)} akan kami kembalikan ke rekening Kakak.`;
   const submit = async () => {
     const ok = await orderAction(
       'jastip_order_unavailable',
@@ -154,7 +169,7 @@ function Refund({ order: o }) {
   const cur = currencyOf(o, data.trips),
     d = decimalsFor(cur),
     paid = Number(o.paid) || 0,
-    canCredit = phoneKey(o.phone).length >= 8;
+    canCredit = phoneKey(o.phone, activeRegion().callingCode).length >= 8;
   const [mode, setMode] = useState('refund'),
     [amount, setAmount] = useState(''),
     [note, setNote] = useState(''),
@@ -205,11 +220,9 @@ function Refund({ order: o }) {
           <Callout>After delivery this is compensation, so it lowers this order’s profit.</Callout>
         )}
         <Field label={`Amount (${cur})`}>
-          <input
-            type="number"
+          <MoneyInput
+            currency={cur}
             min="0"
-            step="any"
-            inputMode="decimal"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
           />
@@ -283,14 +296,89 @@ function UseCredit({ order: o }) {
           <dd>{money(due, false, cur)}</dd>
         </dl>
         <Field label={`Credit to use (${cur})`}>
-          <input
-            type="number"
+          <MoneyInput
+            currency={cur}
             min="0"
-            step="any"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
           />
         </Field>
+      </form>
+    </Frame>
+  );
+}
+
+// Put some or all of the credit used on an order back on the buyer's balance (feedback round 1).
+function ReturnCredit({ order: o }) {
+  const { data, setDialog, orderAction, creditFor, pending } = useOps();
+  const cur = currencyOf(o, data.trips),
+    used = creditUsed(o),
+    paid = Number(o.paid) || 0;
+  const [amount, setAmount] = useState(String(used || '')),
+    [error, setError] = useState('');
+  useUnsavedChanges('return-credit', Number(amount) !== used);
+  const close = () => setDialog(null);
+  const value = Number(amount) || 0,
+    reopens = o.status === 'Paid' && paid - value < Number(o.total);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!(value > 0) || value > used)
+      return setError(`Enter an amount up to ${money(used, false, cur)}.`);
+    const ok = await orderAction(
+      'jastip_return_credit',
+      { p_order_id: o.id, p_amount: value },
+      (d) => applyReturnCredit(d, o.id, value),
+      `${money(value, false, cur)} credit returned to ${o.name.split(' ')[0]}.`,
+    );
+    if (ok) close();
+  };
+  return (
+    <Frame
+      title="Return credit"
+      onClose={close}
+      foot={
+        <>
+          <Button type="button" onClick={close}>
+            Cancel
+          </Button>
+          <span className="spacer" />
+          <Button primary type="submit" form="return-credit-form" disabled={pending}>
+            Return credit
+          </Button>
+        </>
+      }
+    >
+      <form id="return-credit-form" className="modal-body" onSubmit={submit}>
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+        <dl className="credit-summary">
+          <dt>Credit used on {o.id}</dt>
+          <dd>{money(used, false, cur)}</dd>
+          <dt>{o.name}’s balance now</dt>
+          <dd>{money(creditFor(o.phone), false, cur)}</dd>
+        </dl>
+        <Field
+          label={`Amount to return (${cur})`}
+          hint="Return all of it, or just part — the rest stays paid on this order."
+        >
+          <MoneyInput
+            currency={cur}
+            min="0"
+            max={used}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+        </Field>
+        {value > 0 && value <= used && (
+          <Callout>
+            {o.name.split(' ')[0]}’s balance goes up by {money(value, false, cur)} and this order
+            will have {money(Math.max(0, outstanding(o) + value), false, cur)} to pay
+            {reopens ? ', so it moves back to Confirmed' : ''}.
+          </Callout>
+        )}
       </form>
     </Frame>
   );
@@ -302,7 +390,7 @@ function Substitute({ order: o }) {
     d = decimalsFor(cur),
     paid = Number(o.paid) || 0,
     fee = Number(o.shippingFee) || 0,
-    canCredit = phoneKey(o.phone).length >= 8;
+    canCredit = phoneKey(o.phone, activeRegion().callingCode).length >= 8;
   const choices = data.items.filter(
     (i) => i.trip === o.trip && i.status !== 'Draft' && i.id !== o.itemId,
   );
@@ -439,19 +527,17 @@ function Substitute({ order: o }) {
             </Field>
             <div className="field-pair">
               <Field label={`Price per item (${cur})`}>
-                <input
-                  type="number"
+                <MoneyInput
+                  currency={cur}
                   min="0"
-                  step="any"
                   value={unitPrice}
                   onChange={(e) => setUnitPrice(e.target.value)}
                 />
               </Field>
               <Field label={`Estimated cost per item (${cur})`}>
-                <input
-                  type="number"
+                <MoneyInput
+                  currency={cur}
                   min="0"
-                  step="any"
                   value={unitCost}
                   onChange={(e) => setUnitCost(e.target.value)}
                 />

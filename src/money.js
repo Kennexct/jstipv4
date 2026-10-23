@@ -1,3 +1,4 @@
+import { activeRegion, words } from './lib/region.js';
 export const rates = {
   JPY: 105,
   KRW: 12,
@@ -136,7 +137,12 @@ export const outstanding = (o) =>
   o?.status === 'Cancelled' ? 0 : Math.max(0, owed(o) - (Number(o?.paid) || 0));
 // Ledger lines with a type are adjustments made through the order actions.
 export const ledgerLabel = (p) =>
-  ({ refund: 'Refund', credit: 'Credit issued', 'credit-use': 'Paid with credit' })[p?.type] ||
+  ({
+    refund: 'Refund',
+    credit: 'Credit issued',
+    'credit-use': 'Paid with credit',
+    'credit-return': 'Credit returned',
+  })[p?.type] ||
   p?.method ||
   'Payment';
 export const adjustments = (o, type) =>
@@ -153,7 +159,8 @@ export function paymentState(order) {
       ? { label: 'Kept as credit', tone: 'blue' }
       : { label: 'Refunded', tone: 'gray' };
   if (total > 0 && paid >= total + fee) return { label: 'Paid in full', tone: 'green' };
-  if (total > 0 && fee > 0 && paid >= total) return { label: 'Ongkir due', tone: 'amber' };
+  if (total > 0 && fee > 0 && paid >= total)
+    return { label: words(activeRegion()).feeShort + ' due', tone: 'amber' };
   if (deposit > 0 && paid >= deposit) return { label: 'DP paid', tone: 'blue' };
   if (paid > 0) return { label: 'Partly paid', tone: 'amber' };
   if (deposit > 0) return { label: 'DP due', tone: 'amber' };

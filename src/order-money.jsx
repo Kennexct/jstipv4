@@ -1,12 +1,16 @@
 // Order drawer additions for sprint 2 (ADR-009): ongkir, ledger lines, credit, money actions,
 // substitution history and the margin-hit flag.
+import { MoneyInput } from './money-input';
 import React, { useEffect, useState } from 'react';
 import { useOps } from './store';
 import { Button, I } from './ui';
 import { money, outstanding, ledgerLabel, marginHit, shippingFee } from './money';
+import { creditUsed } from './lib/order-actions';
+import { words } from './lib/region';
 
 export function OngkirRow({ o, cur }) {
-  const { role, updateOrder, support } = useOps();
+  const { role, updateOrder, support, region } = useOps();
+  const label = words(region).feeShort;
   const editable =
     role !== 'Helper' && !support && !['Shipped', 'Delivered', 'Cancelled'].includes(o.status);
   const [value, setValue] = useState(String(shippingFee(o) || ''));
@@ -14,7 +18,7 @@ export function OngkirRow({ o, cur }) {
   const changed = Number(value || 0) !== shippingFee(o);
   return (
     <div className="ongkir-row">
-      <span>Ongkir</span>
+      <span>{label}</span>
       {editable ? (
         <form
           onSubmit={(e) => {
@@ -23,12 +27,10 @@ export function OngkirRow({ o, cur }) {
             updateOrder(o.id, { shippingFee: Number(value || 0) });
           }}
         >
-          <input
-            aria-label="Ongkir"
-            type="number"
+          <MoneyInput
+            currency={cur}
+            aria-label={label}
             min="0"
-            step="any"
-            inputMode="numeric"
             placeholder="0"
             value={value}
             onChange={(e) => setValue(e.target.value)}
@@ -69,23 +71,45 @@ export function PaymentLedger({ o, cur }) {
   );
 }
 
+// Credit already used on this order can go back to the buyer's balance, any amount up to what
+// was used (feedback round 1), until the order ships.
+export function CreditReturnNote({ o, cur }) {
+  const { setDialog, support } = useOps();
+  const used = creditUsed(o);
+  if (used <= 0 || support || ['Shipped', 'Delivered', 'Cancelled'].includes(o.status)) return null;
+  return (
+    <div className="credit-note">
+      <I name="Undo2" size={14} />
+      <span>
+        <strong>{money(used, false, cur)}</strong> of credit used here
+      </span>
+      <Button className="small" onClick={() => setDialog({ type: 'return-credit', id: o.id })}>
+        Return credit
+      </Button>
+    </div>
+  );
+}
+
 export function CreditNote({ o, cur }) {
   const { creditFor, setDialog } = useOps();
   const balance = creditFor(o.phone);
-  if (!balance) return null;
+  if (!balance) return <CreditReturnNote o={o} cur={cur} />;
   const usable = outstanding(o) > 0 && !['Cancelled', 'Delivered', 'Requested'].includes(o.status);
   return (
-    <div className="credit-note">
-      <I name="Wallet" size={14} />
-      <span>
-        {o.name.split(' ')[0]} has <strong>{money(balance, false, cur)}</strong> credit
-      </span>
-      {usable && (
-        <Button className="small" onClick={() => setDialog({ type: 'use-credit', id: o.id })}>
-          Use credit
-        </Button>
-      )}
-    </div>
+    <>
+      <div className="credit-note">
+        <I name="Wallet" size={14} />
+        <span>
+          {o.name.split(' ')[0]} has <strong>{money(balance, false, cur)}</strong> credit
+        </span>
+        {usable && (
+          <Button className="small" onClick={() => setDialog({ type: 'use-credit', id: o.id })}>
+            Use credit
+          </Button>
+        )}
+      </div>
+      <CreditReturnNote o={o} cur={cur} />
+    </>
   );
 }
 

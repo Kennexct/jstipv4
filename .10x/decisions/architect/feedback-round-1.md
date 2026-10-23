@@ -1,0 +1,11 @@
+# Architect — feedback-round-1 (2026-10-23) · ADR-010
+- **Server:** settings v2 (couriers, region), ship RPC v2, `return_credit`, `validate_record` v4, a calling-code-aware `phone_key`.
+- **Client:**
+  - `src/lib/region.js`: country presets, default couriers, languages, phone key.
+  - `src/money-input.jsx`: grouped amount input.
+  - `src/qty-input.jsx`: stepper.
+  - `src/item-picker.jsx`: photo picker.
+  - Items list view in `seller.jsx`.
+  - Trip edit through the trip dialog.
+  - Quick-action sheet in `main.jsx`.
+- **Store:** loads `jastip_settings` (falls back to `jastip_messaging` when the migration is missing). Exposes `couriers`, `region` and `saveSettings`.

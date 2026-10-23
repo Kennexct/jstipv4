@@ -2973,41 +2973,6 @@ tfoot td {
   .invoice-panel {
     overflow: hidden;
   }
-  .bottom-nav {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 45;
-    height: 64px;
-    padding-bottom: env(safe-area-inset-bottom);
-    display: flex;
-    align-items: center;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-  }
-  .bottom-nav button {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    height: 100%;
-    font-size: 10px;
-    color: var(--text-3);
-  }
-  .bottom-nav button.active {
-    color: var(--accent);
-  }
-  .bottom-nav .quick-add svg {
-    color: var(--accent);
-  }
-  .app-footer {
-    padding-bottom: 80px;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
   .toast {
     bottom: 78px;
     width: max-content;
@@ -5449,4 +5414,350 @@ tfoot td {
   .purchase-toolbar select {
     flex: 1 1 100%;
   }
+}
+
+/* Feedback round 1: quantity stepper and past-customer suggestions. */
+.qty-input {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+}
+.qty-input input {
+  flex: 1;
+  min-width: 56px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.qty-step {
+  flex: none;
+  width: 36px;
+  min-height: 36px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.qty-step:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.qty-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.suggestions {
+  list-style: none;
+  margin: -10px 0 16px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  max-height: 220px;
+  overflow: auto;
+}
+.suggestions button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.suggestions button:hover,
+.suggestions button:focus-visible {
+  background: var(--surface-2, var(--hover));
+}
+.suggestions small {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+
+/* Feedback round 1: bottom bar with a quick-action "+" on phones and tablets. */
+@media (max-width: 1100px) {
+  .bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: var(--side-w);
+    right: 0;
+    z-index: 45;
+    height: 64px;
+    padding-bottom: env(safe-area-inset-bottom);
+    display: flex;
+    align-items: center;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+  }
+  .bottom-nav button {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 100%;
+    font-size: 10px;
+    color: var(--text-3);
+  }
+  .bottom-nav button.active {
+    color: var(--accent);
+  }
+  .bottom-nav .quick-add svg {
+    width: 36px;
+    height: 36px;
+    padding: 8px;
+    border-radius: var(--r-full);
+    background: var(--accent);
+    color: var(--surface);
+  }
+  [data-theme='dark'] .bottom-nav .quick-add svg {
+    color: var(--bg-side);
+  }
+  /* The sidebar is still visible on tablets, so "More" only shows on phones. */
+  .bottom-nav .more-btn {
+    display: none;
+  }
+  .app-footer {
+    padding-bottom: 80px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .toast {
+    bottom: 78px;
+  }
+}
+@media (max-width: 900px) {
+  .bottom-nav {
+    left: 0;
+  }
+  .bottom-nav .more-btn {
+    display: flex;
+  }
+}
+.quick-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  z-index: 80;
+}
+.quick-sheet {
+  position: fixed;
+  z-index: 81;
+  left: 50%;
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(480px, calc(100% - 24px));
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+}
+.quick-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.quick-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.quick-grid button {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 64px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.quick-grid button:first-child {
+  border-color: var(--accent);
+}
+.quick-grid button > svg {
+  flex: none;
+  color: var(--accent);
+}
+.quick-grid span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.quick-grid small {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+@media (min-width: 1101px) {
+  .quick-scrim,
+  .quick-sheet {
+    display: none;
+  }
+}
+.courier-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.courier-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+}
+.courier-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.courier-add input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.new-courier {
+  padding: 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface-2);
+}
+.new-courier .field {
+  margin-bottom: 8px;
+}
+@media (max-width: 640px) {
+  .courier-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .courier-list li .check-row {
+    grid-row: 2;
+  }
+}
+/* Feedback round 1: items list view and photo picker. */
+.view-switch {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.view-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 0;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.view-switch button + button {
+  border-left: 1px solid var(--border);
+}
+.view-switch button.active {
+  background: var(--surface-2);
+  color: var(--accent);
+}
+.items-table td {
+  vertical-align: middle;
+}
+.item-row-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.item-row-name small {
+  display: block;
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.item-thumb {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-xs);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.item-thumb > *,
+.item-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.item-thumb .no-photo span {
+  display: none;
+}
+.status-select {
+  min-width: 120px;
+}
+.item-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  max-height: 260px;
+  overflow: auto;
+  margin-bottom: 16px;
+  padding: 2px;
+}
+.item-picker button {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.item-picker button[aria-pressed='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.item-picker button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.item-picker .item-thumb {
+  width: 100%;
+  height: 72px;
+}
+.item-picker strong {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.item-picker small {
+  color: var(--text-3);
+  font-size: 11px;
 }
