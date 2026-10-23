@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@fontsource/geist/latin-400.css';
 import '@fontsource/geist/latin-500.css';
@@ -23,10 +23,35 @@ import {
   navIcons,
   BrandMark,
   BrandWordmark,
+  Loader,
 } from './ui';
+import { useAdminUnread } from './lib/chat';
 import { planDetails } from './data';
 import './styles/tokens.css';
 import './styles/app.css';
+// Public landing page (ADR-007), lazy so the dashboard bundle does not grow.
+const Landing = lazy(() => import('./landing/Landing'));
+const hasStoredSession = () => {
+  try {
+    return Object.keys(localStorage).some((k) => k.startsWith('sb-') && k.endsWith('-auth-token'));
+  } catch {
+    return false;
+  }
+};
+// #Home always shows the landing page. The bare root shows it only to signed-out visitors on
+// the web: never in the Android app, for invite or password-recovery links, or in demo builds.
+function wantsLanding(page, connection, demo) {
+  if (page === 'Home') return true;
+  if (demo || window.Capacitor?.isNativePlatform?.()) return false;
+  if (location.hash && location.hash !== '#') return false;
+  if (new URLSearchParams(location.search).has('invite')) return false;
+  try {
+    if (sessionStorage.getItem('jo-invite') || sessionStorage.getItem('jastip-password-recovery'))
+      return false;
+  } catch {}
+  if (connection === 'signedout' || connection === 'unconfigured') return true;
+  return connection === 'loading' && !hasStoredSession();
+}
 const screens = {
   Overview,
   Orders,
@@ -74,6 +99,17 @@ function App() {
     exitSupport,
   } = useOps();
   const [notifications, setNotifications] = useState(false);
+  const inboxUnread = useAdminUnread(!demoMode && connection === 'ready' && mode === 'admin');
+  // After signing in from the landing page, leave the #SignIn / #SignUp address behind.
+  useEffect(() => {
+    if (connection === 'ready' && ['SignIn', 'SignUp'].includes(page)) navigate('Overview');
+  }, [connection, page]);
+  if (wantsLanding(page, connection, demoMode))
+    return (
+      <Suspense fallback={<Loader brand label="Loading Bawa…" />}>
+        <Landing />
+      </Suspense>
+    );
   if (!demoMode && (connection !== 'ready' || page === 'Recovery')) return <ConnectionGate />;
   const open = data.orders.filter((o) => !['Cancelled', 'Delivered'].includes(o.status)),
     requests = data.orders.filter((o) => o.status === 'Requested'),
@@ -81,7 +117,7 @@ function App() {
     activeItems = data.items.filter((i) => i.status !== 'Draft').length;
   const navs =
     mode === 'admin'
-      ? ['Metrics', 'Merchants', 'Moderation', 'Audit']
+      ? ['Metrics', 'Merchants', 'Moderation', 'Inbox', 'Audit']
       : ['Overview', 'Orders', 'Requests', 'Items', 'Trips', 'Purchasing', 'Customers', 'Reports'];
   const Screen = screens[page] || (mode === 'admin' ? Admin : Overview);
   return (
@@ -158,6 +194,11 @@ function App() {
                     <span>{p}</span>
                     {p === 'Orders' && <span className="nav-count">{open.length}</span>}
                     {p === 'Requests' && requests.length > 0 && <i className="nav-dot" />}
+                    {p === 'Inbox' && inboxUnread > 0 && (
+                      <span className="nav-count" aria-label={`${inboxUnread} unread`}>
+                        {inboxUnread}
+                      </span>
+                    )}
                     {p === 'Moderation' && (
                       <span className="nav-count">
                         {demoMode ? 1 : data.reports.filter((r) => r.status === 'Open').length}

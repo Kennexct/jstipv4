@@ -4,3 +4,4 @@ Indexes: records(workspace,kind,trip), records(workspace,kind,created_at), uniqu
 Validation in jastip.validate_record; plan limits in jastip_commit. Issue: stock drift when qty/itemId edited on Requested/Quoted orders.
 Rule: future changes = new additive migration + supabase/tests assertions.
 - bawa-rebrand (2026-10-21): see bawa-rebrand.md
+- landing-and-support-chat (2026-10-23): see landing-and-support-chat.md (ADR-007)

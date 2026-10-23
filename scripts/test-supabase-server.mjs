@@ -24,6 +24,13 @@ const args = {
   jastip_admin_action: ['p_workspace', 'p_action', 'p_value'],
   jastip_report_store: ['p_slug', 'p_note'],
   jastip_resolve_report: ['p_workspace', 'p_report'],
+  jastip_chat_start: ['p_name', 'p_contact', 'p_body'],
+  jastip_chat_send: ['p_thread', 'p_token', 'p_body'],
+  jastip_chat_poll: ['p_thread', 'p_token', 'p_after'],
+  jastip_admin_chats: [],
+  jastip_admin_chat: ['p_thread'],
+  jastip_admin_chat_reply: ['p_thread', 'p_body'],
+  jastip_admin_chat_status: ['p_thread', 'p_status'],
 };
 const emails = [];
 const jsonArgs = new Set(['p_changes', 'p_shop', 'p_order', 'p_value']);

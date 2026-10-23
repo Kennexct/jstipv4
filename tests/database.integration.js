@@ -331,3 +331,62 @@ test('SGD trip prices validate on the server; storefront theme and team edits pe
   expect(errors).toEqual([]);
   await buyer.close();
 });
+
+test('signed-out visitors see the landing page and chat with the platform owner', async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(120000);
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    'Your jastip business, in order.',
+  );
+  await page.getByRole('button', { name: 'Get started' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible();
+  await page.getByRole('button', { name: 'About Bawa' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    'Your jastip business, in order.',
+  );
+
+  await page.getByRole('button', { name: 'Open chat' }).click();
+  const chat = page.getByRole('dialog', { name: 'Chat with Bawa' });
+  await chat.getByLabel('Your name').fill('Sari');
+  await chat.getByLabel(/Email or WhatsApp/).fill('sari@example.com');
+  await chat.getByLabel('Message').fill('Does Bawa work for Korea trips?');
+  await chat.getByRole('button', { name: 'Send message' }).click();
+  await expect(chat.locator('.lp-bubble.visitor')).toContainText('Does Bawa work for Korea trips?');
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('bawa-chat')));
+  expect(saved.token).toHaveLength(64);
+
+  const adminContext = await browser.newContext();
+  const admin = await adminContext.newPage();
+  admin.on('pageerror', (e) => errors.push(e.message));
+  await session(admin, true);
+  await admin.goto('/#Inbox');
+  await expect(admin.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible();
+  const navItem = admin.locator('.nav-item').filter({ hasText: 'Inbox' });
+  await expect(navItem.locator('.nav-count')).toHaveText('1');
+  await admin.getByRole('button', { name: /Sari/ }).click();
+  await expect(admin.locator('.inbox-bubble.visitor')).toContainText('Korea trips');
+  await expect(admin.getByText('sari@example.com')).toBeVisible();
+  await expect(navItem.locator('.nav-count')).toHaveCount(0);
+  await admin.getByLabel('Reply').fill('Yes! Set the trip currency to KRW.');
+  await admin.getByRole('button', { name: 'Send reply' }).click();
+  await expect(admin.locator('.inbox-bubble.admin')).toContainText('KRW');
+
+  // The visitor's open panel polls every 5 seconds.
+  await expect(chat.locator('.lp-bubble.admin')).toContainText('KRW', { timeout: 15000 });
+  await chat.getByLabel('Message').fill('Great, thanks');
+  await chat.getByRole('button', { name: 'Send' }).click();
+  await expect(chat.locator('.lp-bubble.visitor').last()).toContainText('Great, thanks');
+
+  await admin.getByRole('button', { name: 'Block', exact: true }).click();
+  await expect(admin.getByText('Unblock this conversation to reply.')).toBeVisible();
+  await expect(chat.getByText('This conversation is closed.')).toBeVisible({ timeout: 15000 });
+  await chat.getByRole('button', { name: 'Start a new conversation' }).click();
+  await expect(chat.getByLabel('Your name')).toBeVisible();
+  expect(errors).toEqual([]);
+  await adminContext.close();
+});

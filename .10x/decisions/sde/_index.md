@@ -4,3 +4,4 @@ No tech-debt log yet; see reviews/2026-10-21-code-review.md.
 - bawa-rebrand (2026-10-21): see bawa-rebrand.md
 - apk-supabase-config (2026-10-21): see apk-supabase-config.md
 - apk-photo-picker (2026-10-21): see apk-photo-picker.md (ADR-006)
+- landing-and-support-chat (2026-10-23): see landing-and-support-chat.md (ADR-007)

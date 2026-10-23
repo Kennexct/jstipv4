@@ -37,3 +37,8 @@ Review items still open: APK env secrets, public app URL for links in APK, per-r
 
 ## 2026-10-21 apk-photo-picker (ADR-006)
 - APK photos use the native Take photo / Choose from gallery sheet (@capacitor/camera); web drops camera-only `capture`; files without a type accepted. Local: unit, build, e2e 16/16 PASS. Needs device QA after the next APK build.
+
+## 2026-10-23 landing-and-support-chat (ADR-007, Accepted)
+- Spec `.10x/specs/2026-10-23-landing-and-support-chat-design.md` approved by Kenny 13:39. Phases 1–3 written (cto, pm, architect, staff, em, senior). Implementation in progress.
+- 2026-10-23 phases 4–6 done locally on branch `feature/landing-and-support-chat`: unit 13/13, build, db PASS (2 files), e2e 19/19, integration 4/4. Landing at `/` (signed out) and `#Home`; chat bottom-right; admin Inbox.
+- Needs Kenny: apply migration 202610220001 in Supabase → push/merge → CI green → smoke test on Vercel (reviews/2026-10-23-landing-qa-report.md).

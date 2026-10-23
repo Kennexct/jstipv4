@@ -3,3 +3,4 @@
 2026-10-21: unit 7/7 pass, build OK; npm ci fails (stale lockfile) → CI red. Docker/e2e not run in review.
 - bawa-rebrand (2026-10-21): see bawa-rebrand.md
 - apk-photo-picker (2026-10-21): see apk-photo-picker.md (ADR-006)
+- landing-and-support-chat (2026-10-23): see landing-and-support-chat.md (ADR-007)

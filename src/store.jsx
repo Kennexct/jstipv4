@@ -85,7 +85,7 @@ export function Provider({ children, initialSeed }) {
   const mode =
     page === 'Storefront'
       ? 'store'
-      : ['Merchants', 'Metrics', 'Moderation', 'Audit'].includes(page)
+      : ['Merchants', 'Metrics', 'Moderation', 'Inbox', 'Audit'].includes(page)
         ? 'admin'
         : 'seller';
   const announce = (message, undo) => {
@@ -163,7 +163,7 @@ export function Provider({ children, initialSeed }) {
         result = await loadWorkspace(
           supportRef.current ? dataRef.current.workspaceId : activeWorkspace.current,
         );
-        if (['Merchants', 'Metrics', 'Moderation', 'Audit'].includes(route())) {
+        if (['Merchants', 'Metrics', 'Moderation', 'Inbox', 'Audit'].includes(route())) {
           const platform = await rpc('jastip_platform');
           result = {
             ...emptyWorkspace(),

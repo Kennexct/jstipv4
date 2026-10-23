@@ -3,6 +3,7 @@ import { useOps, useUnsavedChanges } from './store';
 import { money, isUnlimited, stockLabel, depositLabel, currencyOf, currencyNames } from './money';
 import { planDetails, accentOptions } from './data';
 import { LiveBilling, LiveAdminSummary } from './live-workspaces';
+import { AdminInbox } from './admin-inbox';
 import { rpc } from './lib/supabase';
 import { sendInviteEmail, inviteLink } from './lib/repository';
 import { markWalkthroughDone } from './lib/records';
@@ -1366,6 +1367,7 @@ export function Admin() {
       (plan === 'All plans' || m.plan === plan) &&
       `${m.name} ${m.owner}`.toLowerCase().includes(q.toLowerCase()),
   );
+  if (page === 'Inbox') return <AdminInbox />;
   if (!demoMode && ['Metrics', 'Moderation'].includes(page)) return <LiveAdminSummary />;
   if (page === 'Metrics')
     return (

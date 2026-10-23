@@ -4688,3 +4688,211 @@ tfoot td {
   height: 36px;
   font-size: var(--fs);
 }
+
+/* Platform Inbox: landing-page support chat (ADR-007) */
+.auth-home {
+  margin-top: 16px;
+}
+.inbox {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  height: min(680px, calc(100vh - 190px));
+  min-height: 420px;
+}
+.inbox-list {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+.inbox-filter {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0 var(--s-4);
+  background: var(--surface);
+}
+.inbox-filter .tabs {
+  margin-bottom: 0;
+  gap: var(--s-4);
+}
+.inbox-row {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: var(--s-3) var(--s-4);
+  padding-right: 40px;
+  border: 0;
+  border-bottom: 1px solid var(--divider);
+  background: none;
+  text-align: left;
+  color: var(--text);
+}
+.inbox-row:hover {
+  background: var(--surface-2);
+}
+.inbox-row.active {
+  background: var(--accent-soft);
+}
+.inbox-row-top {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+.inbox-row strong {
+  font-weight: 500;
+  font-size: var(--fs);
+}
+.inbox-row.unread strong {
+  font-weight: 600;
+}
+.inbox-row small {
+  flex: none;
+  color: var(--text-4);
+  font-size: var(--fs-2xs);
+}
+.inbox-row-last {
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inbox-row-last em {
+  font-style: normal;
+  color: var(--text-4);
+}
+.inbox-unread {
+  position: absolute;
+  right: var(--s-4);
+  top: 50%;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 99px;
+  background: var(--accent);
+  color: var(--surface);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+}
+.inbox-none {
+  padding: var(--s-5) var(--s-4);
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+.inbox-thread {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.inbox-thread > .empty {
+  margin: auto;
+}
+.inbox-thread-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border-bottom: 1px solid var(--border);
+}
+.inbox-thread-head > div:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+.inbox-thread-head strong {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.inbox-thread-head small {
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+}
+.inbox-thread-head small .text-btn {
+  padding: 0;
+  color: var(--accent);
+}
+.inbox-back {
+  display: none;
+}
+.inbox-actions {
+  display: flex;
+  gap: var(--s-2);
+}
+.inbox-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  background: var(--sunken);
+}
+.inbox-bubble {
+  max-width: 72%;
+  display: grid;
+  gap: 3px;
+}
+.inbox-bubble p {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: var(--fs);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.inbox-bubble small {
+  color: var(--text-4);
+  font-size: var(--fs-2xs);
+  padding: 0 4px;
+}
+.inbox-bubble.visitor p {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+.inbox-bubble.admin {
+  align-self: flex-end;
+  justify-items: end;
+}
+.inbox-bubble.admin p {
+  background: var(--accent);
+  color: var(--surface);
+  border-bottom-right-radius: 4px;
+}
+.inbox-compose {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border-top: 1px solid var(--border);
+}
+.inbox-compose textarea {
+  flex: 1;
+  resize: none;
+  min-height: 56px;
+}
+@media (max-width: 900px) {
+  .inbox {
+    grid-template-columns: 1fr;
+    height: calc(100vh - 210px);
+  }
+  .inbox-list {
+    border-right: 0;
+  }
+  .inbox.has-thread .inbox-list,
+  .inbox:not(.has-thread) .inbox-thread {
+    display: none;
+  }
+  .inbox-back {
+    display: inline-flex;
+  }
+  .inbox-thread-head {
+    flex-wrap: wrap;
+  }
+  .inbox-bubble {
+    max-width: 88%;
+  }
+}

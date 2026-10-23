@@ -3,7 +3,7 @@ import { supabase } from './lib/supabase';
 import { rpc } from './lib/supabase';
 import { useOps } from './store';
 import { appBase } from './lib/repository';
-import { Button, Field, Callout, Loader, BrandLockup } from './ui';
+import { Button, Field, Callout, Loader, BrandLockup, I } from './ui';
 export function ConnectionGate() {
   const { connection, connectionError, reload, session, signOut, navigate } = useOps();
   const [view, setView] = useState(location.hash === '#SignUp' ? 'signup' : 'signin'),
@@ -204,6 +204,11 @@ export function ConnectionGate() {
               {view === 'reset' ? 'Back to sign in' : 'Forgot password?'}
             </button>
           </div>
+        )}
+        {connection === 'signedout' && !recovery && (
+          <button className="text-btn auth-home" onClick={() => (location.hash = 'Home')}>
+            <I name="ChevronLeft" size={13} /> About Bawa
+          </button>
         )}
         {session && (
           <button className="text-btn" onClick={signOut}>

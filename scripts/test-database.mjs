@@ -54,11 +54,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const name = 'jastip-db-tests-' + process.pid;
   try {
     await startDatabase(name);
-    const result = sql(
-      name,
-      readFileSync(path.join(root, 'supabase/tests/security-and-workflows.sql'), 'utf8'),
-    );
-    console.log(result.split('\n').at(-1));
+    // Every file in supabase/tests runs against the same freshly migrated database, in name order.
+    for (const file of readdirSync(path.join(root, 'supabase/tests'))
+      .filter((f) => f.endsWith('.sql'))
+      .sort()) {
+      const result = sql(name, readFileSync(path.join(root, 'supabase/tests', file), 'utf8'));
+      console.log(file + ': ' + result.split('\n').at(-1));
+    }
   } catch (e) {
     console.error(e.stderr?.toString() || e.message);
     process.exitCode = 1;

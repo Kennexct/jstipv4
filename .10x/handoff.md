@@ -8,3 +8,9 @@ Read `.10x/specs/2026-10-21-bawa-rebrand-design.md`, ADR-005, `docs/brand/BRAND.
 
 ## 2026-10-21 14:50 — bawa-rebrand shipped to the branch
 Push, then check: CI "Validate Bawa" green; "Build Android APK" run green (new icon step) → install `bawa-debug.apk`; on Vercel: tab icon, sidebar logo, Settings → Appearance → System theme with phone in dark mode, storefront footer. Optional: set VITE_PUBLIC_APP_URL in Vercel for WhatsApp previews. Still open before public launch: PDKI + domain check.
+
+## 2026-10-23 — landing-and-support-chat (to SDE)
+Read the spec + ADR-007. The task order is in `decisions/engineering-manager/landing-and-support-chat.md`. New migration `202610220001_support_chat.sql` (additive). Landing at `/` (signed out) and `#Home`; chat bottom-right; admin Inbox tab.
+
+## 2026-10-23 — landing-and-support-chat built (to Kenny / DevOps)
+Branch `feature/landing-and-support-chat`. Deploy order in `decisions/devops/landing-and-support-chat.md`. The migration must run before the chat works. Smoke checklist in `reviews/2026-10-23-landing-qa-report.md`. Follow-ups: privacy-policy line for chat contacts; owner alerts for new chats (not built).

@@ -163,6 +163,7 @@ export const navIcons = {
   Merchants: 'Building2',
   Metrics: 'ChartNoAxesCombined',
   Moderation: 'ShieldCheck',
+  Inbox: 'MessageCircle',
   Audit: 'History',
   Storefront: 'Store',
   Welcome: 'Compass',

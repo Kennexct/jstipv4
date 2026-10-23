@@ -15,7 +15,9 @@ const pages = [
   'Metrics',
   'Merchants',
   'Moderation',
+  'Inbox',
   'Audit',
+  'Home',
 ];
 test('all workspaces render without runtime errors or horizontal overflow', async ({ page }) => {
   test.setTimeout(120000);
@@ -338,4 +340,57 @@ test('product photos show a preview, including files without a MIME type (Androi
     buffer: Buffer.from('hi'),
   });
   await expect(page.getByRole('dialog')).toContainText('Choose an image file');
+});
+
+test('landing page explains Bawa, shows example data and real plan prices', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/#Home');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    'Your jastip business, in order.',
+  );
+  // Example rows are always labelled; the hero card uses the real margin calculation.
+  await expect(page.getByText('Example data').first()).toBeVisible();
+  await expect(page.locator('.lp-calc')).toContainText('Rp 1.586.000');
+  await expect(page.locator('.lp-calc')).toContainText('12.7%');
+  for (const tab of ['Orders', 'Purchasing', 'Storefront', 'Items']) {
+    await page.getByRole('tab', { name: tab }).click();
+    await expect(page.getByRole('tab', { name: tab })).toHaveAttribute('aria-selected', 'true');
+  }
+  await page.getByRole('button', { name: 'Pricing', exact: true }).first().click();
+  const plans = page.locator('#pricing article');
+  await expect(plans).toHaveCount(3);
+  await expect(plans.nth(0)).toContainText('Rp 49.000');
+  await expect(plans.nth(1)).toContainText('Rp 149.000');
+  await expect(plans.nth(2)).toContainText('Rp 399.000');
+  // In-page links scroll without changing the route.
+  expect(new URL(page.url()).hash).toBe('#Home');
+  await page.getByText('Do my buyers need an account?').click();
+  await expect(page.getByText(/Buyers order from your storefront link/)).toBeVisible();
+  // The demo build has no account system, so Get started lands in the workspace.
+  await page.getByRole('button', { name: 'Get started' }).first().click();
+  await expect(page).toHaveURL(/#Overview$/);
+  expect(errors).toEqual([]);
+});
+test('landing chat opens from the corner button and closes with Escape', async ({ page }) => {
+  await page.goto('/#Home');
+  const launcher = page.getByRole('button', { name: 'Open chat' });
+  await expect(launcher).toBeVisible();
+  const box = await launcher.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box.x + box.width).toBeGreaterThan(viewport.width - 40);
+  expect(box.y + box.height).toBeGreaterThan(viewport.height - 40);
+  await launcher.click();
+  const panel = page.getByRole('dialog', { name: 'Chat with Bawa' });
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText('messages are not sent');
+  await page.keyboard.press('Escape');
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open chat' })).toBeFocused();
+});
+test('platform console has an Inbox for landing-page chats', async ({ page }) => {
+  await page.goto('/#Metrics');
+  await page.getByRole('button', { name: 'Inbox', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Inbox', level: 1 })).toBeVisible();
+  await expect(page.getByText('The inbox needs the live database')).toBeVisible();
 });
