@@ -1,13 +1,22 @@
 // Message templates for buyers (ADR-008). Pure functions, unit-tested in tests/messages.test.js.
 // Output is plain text for the clipboard. Bawa never sends it: the seller pastes and sends.
-import { money } from '../money.js';
+import { money, owed, outstanding, shippingFee } from '../money.js';
 
-export const TEMPLATE_KEYS = ['quote', 'reminder', 'status', 'shipped'];
+export const TEMPLATE_KEYS = [
+  'quote',
+  'reminder',
+  'status',
+  'shipped',
+  'unavailable',
+  'substitute',
+];
 export const TEMPLATE_LABELS = {
   quote: 'Quote',
   reminder: 'Payment reminder',
   status: 'Status update',
   shipped: 'Shipped',
+  unavailable: 'Item unavailable',
+  substitute: 'Substitute offer',
 };
 export const DEFAULT_TEMPLATES = {
   quote:
@@ -17,6 +26,10 @@ export const DEFAULT_TEMPLATES = {
   status: 'Halo Kak {nama}, pesanan {order} ({item}) sekarang: {status}. Cek di sini: {link_lacak}',
   shipped:
     'Halo Kak {nama}, pesanan {order} sudah dikirim via {kurir}, resi {resi}. Lacak pesanan: {link_lacak}. Terima kasih sudah titip!',
+  unavailable:
+    'Halo Kak {nama}, mohon maaf, {item} untuk pesanan {order} sedang habis di toko. {penyelesaian} Maaf ya Kak, terima kasih atas pengertiannya.',
+  substitute:
+    'Halo Kak {nama}, {item} untuk pesanan {order} habis. Ada pengganti: {pengganti} × {qty_baru}, totalnya {total_baru}. Mau diganti, Kak? Balas "OK" ya.',
 };
 export const PLACEHOLDERS = [
   ['{nama}', 'Buyer’s first name'],
@@ -31,6 +44,11 @@ export const PLACEHOLDERS = [
   ['{kurir}', 'Courier'],
   ['{resi}', 'Resi number'],
   ['{link_lacak}', 'Tracking link'],
+  ['{ongkir}', 'Shipping fee'],
+  ['{penyelesaian}', 'Refund or credit sentence'],
+  ['{pengganti}', 'Substitute item'],
+  ['{qty_baru}', 'Substitute quantity'],
+  ['{total_baru}', 'Substitute total'],
 ];
 const STATUS_ID = {
   Requested: 'menunggu penawaran',
@@ -51,7 +69,7 @@ export function bankLine(bank = {}) {
 }
 
 // Values for every placeholder of one order. Missing values become '' and are tidied away.
-export function orderValues(order, { currency = 'IDR', bank, trackingLink = '' } = {}) {
+export function orderValues(order, { currency = 'IDR', bank, trackingLink = '', extra = {} } = {}) {
   const total = Number(order.total) || 0,
     paid = Number(order.paid) || 0,
     deposit = Number(order.deposit) || 0;
@@ -59,15 +77,17 @@ export function orderValues(order, { currency = 'IDR', bank, trackingLink = '' }
     nama: (order.name || '').trim().split(/\s+/)[0] || '',
     item: order.item || '',
     qty: String(order.qty ?? ''),
-    total: money(total, false, currency),
+    total: money(owed(order), false, currency),
     dp: deposit > 0 ? money(deposit, false, currency) : money(total, false, currency),
-    sisa: money(Math.max(0, total - paid), false, currency),
+    sisa: money(outstanding(order), false, currency),
+    ongkir: shippingFee(order) ? money(shippingFee(order), false, currency) : '',
     status: STATUS_ID[order.status] || (order.status || '').toLowerCase(),
     order: order.id || '',
     rekening: bankLine(bank),
     kurir: order.courier || '',
     resi: order.resi || '',
     link_lacak: trackingLink,
+    ...extra,
   };
 }
 
@@ -92,7 +112,7 @@ export function orderMessage(kind, order, options = {}) {
   const template = templatesOf(options.messaging)[kind];
   return renderTemplate(
     template,
-    orderValues(order, { ...options, bank: options.messaging?.bank }),
+    orderValues(order, { ...options, bank: options.messaging?.bank, extra: options.extra || {} }),
   );
 }
 
@@ -119,13 +139,12 @@ export const normaliseResi = (value) => (value || '').trim().toUpperCase();
 export const validResi = (value) => /^[A-Z0-9-]{4,40}$/.test(normaliseResi(value));
 // Matches the server: purchased (or already shipped) and fully paid.
 export const canShip = (order) =>
-  ['Purchased', 'Shipped'].includes(order.status) &&
-  (Number(order.paid) || 0) >= (Number(order.total) || 0);
+  ['Purchased', 'Shipped'].includes(order.status) && (Number(order.paid) || 0) >= owed(order);
 export const shipBlocker = (order) =>
   !['Purchased', 'Shipped'].includes(order.status)
     ? order.status === 'Delivered'
       ? 'Already delivered'
       : 'Not purchased yet'
-    : (Number(order.paid) || 0) < (Number(order.total) || 0)
+    : (Number(order.paid) || 0) < owed(order)
       ? 'Not fully paid'
       : '';

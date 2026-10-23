@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useOps, useUnsavedChanges } from './store';
 import { Overlay, Button, Field, Callout, I, Badge } from './ui';
-import { money, currencyOf } from './money';
+import { money, currencyOf, outstanding } from './money';
 import { appBase } from './lib/repository';
 import {
   COURIERS,
@@ -14,34 +14,18 @@ import {
   orderMessage,
   trackingLink,
 } from './lib/messages';
+import { MoneyDialog, moneyDialogTypes } from './money-dialogs';
+import { Frame } from './dialog-frame';
 
-export const opsDialogTypes = ['ship', 'reminders'];
+export const opsDialogTypes = ['ship', 'reminders', ...moneyDialogTypes];
 
 export function OpsDialog() {
   const { dialog } = useOps();
+  if (moneyDialogTypes.includes(dialog.type)) return <MoneyDialog />;
   return dialog.type === 'ship' ? (
     <ShipDialog ids={dialog.ids} />
   ) : (
     <RemindersDialog ids={dialog.ids} />
-  );
-}
-
-function Frame({ title, children, foot, onClose }) {
-  return (
-    <Overlay onClose={onClose} title="ops-dialog-title">
-      <div className="dialog-content">
-        <div className="modal-head">
-          <div>
-            <h2 id="ops-dialog-title">{title}</h2>
-          </div>
-          <button className="icon-btn" aria-label="Close dialog" onClick={onClose}>
-            <I name="X" size={18} />
-          </button>
-        </div>
-        {children}
-        <div className="modal-foot">{foot}</div>
-      </div>
-    </Overlay>
   );
 }
 
@@ -205,7 +189,7 @@ function RemindersDialog({ ids }) {
   const { data, setDialog, copy, messaging } = useOps();
   const picked = data.orders.filter((o) => ids.includes(o.id));
   const due = picked.filter(
-    (o) => !['Cancelled', 'Delivered'].includes(o.status) && Number(o.paid) < Number(o.total),
+    (o) => !['Cancelled', 'Delivered'].includes(o.status) && outstanding(o) > 0,
   );
   const paid = picked.length - due.length;
   const [copied, setCopied] = useState([]);
@@ -245,7 +229,7 @@ function RemindersDialog({ ids }) {
                 <div>
                   <strong>{o.name}</strong>
                   <small>
-                    {o.id} · {money(Math.max(0, o.total - o.paid), false, cur)} to pay
+                    {o.id} · {money(outstanding(o), false, cur)} to pay
                   </small>
                 </div>
                 <Badge status={o.status} />

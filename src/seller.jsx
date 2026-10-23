@@ -1,6 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useOps } from './store';
-import { money, orderProfit, stockLabel, currencyOf, moneyTotals } from './money';
+import { NeedsToday } from './needs-today';
+import {
+  money,
+  orderProfit,
+  stockLabel,
+  currencyOf,
+  moneyTotals,
+  outstanding,
+  marginHit,
+  owed,
+} from './money';
 import { tripStatuses, planDetails } from './data';
 import { walkthroughDone } from './lib/records';
 import {
@@ -116,13 +126,15 @@ export function OrdersTable({ orders, compact = false, selected = [], onSelect }
               </td>
               {!compact && <td className="muted o-source">{o.source}</td>}
               <td className="num o-amount">
-                {money(o.total, false, currencyOf(o, data.trips))}
-                <small className={o.paid < o.total ? 'amber' : ''}>
-                  {o.paid === o.total
-                    ? 'Fully paid'
-                    : o.paid
-                      ? money(o.paid, false, currencyOf(o, data.trips)) + ' paid'
-                      : 'Awaiting payment'}
+                {money(owed(o), false, currencyOf(o, data.trips))}
+                <small className={outstanding(o) > 0 ? 'amber' : ''}>
+                  {o.status === 'Cancelled'
+                    ? 'Cancelled'
+                    : outstanding(o) <= 0
+                      ? 'Fully paid'
+                      : o.paid
+                        ? money(o.paid, false, currencyOf(o, data.trips)) + ' paid'
+                        : 'Awaiting payment'}
                 </small>
               </td>
               <td className="o-go">
@@ -145,7 +157,7 @@ export function Overview() {
     profit = live.reduce((a, o) => a + orderProfit(o), 0),
     open = live.filter((o) => o.status !== 'Delivered'),
     pending = live.filter((o) => o.status === 'Requested'),
-    unpaid = live.reduce((a, o) => a + Math.max(0, o.total - o.paid), 0);
+    unpaid = live.reduce((a, o) => a + outstanding(o), 0);
   return (
     <>
       <Header
@@ -167,6 +179,7 @@ export function Overview() {
           Add item
         </Button>
       </Header>
+      <NeedsToday />
       <Stats
         stats={[
           {
@@ -337,7 +350,7 @@ export function Orders() {
   const list = orders.filter(
     (o) =>
       (status === 'All' ||
-        (status === 'Unpaid' && o.paid < o.total && o.status !== 'Cancelled') ||
+        (status === 'Unpaid' && outstanding(o) > 0 && o.status !== 'Cancelled') ||
         o.status === status) &&
       (trip === 'all' || o.trip === trip) &&
       `${o.name} ${o.id} ${o.item}`.toLowerCase().includes(q.toLowerCase()),
@@ -920,7 +933,7 @@ export function Purchasing() {
   );
   const toBuy = list.filter((o) => o.status !== 'Purchased'),
     bought = list.filter((o) => o.status === 'Purchased'),
-    outstanding = list.reduce((sum, o) => sum + Math.max(0, o.total - o.paid), 0),
+    toCollect = list.reduce((sum, o) => sum + outstanding(o), 0),
     dpDue = toBuy.filter((o) => (o.deposit || 0) > o.paid);
   const store = (o) => items.find((i) => i.id === o.itemId)?.store || 'Other';
   const stores = [...new Set(list.map(store))];
@@ -940,7 +953,7 @@ export function Purchasing() {
       row.bought += o.status === 'Purchased' ? o.qty : 0;
       row.orders += 1;
       row.estimate += (o.quotedCost || 0) * o.qty;
-      row.outstanding += Math.max(0, o.total - o.paid);
+      row.outstanding += outstanding(o);
       return acc;
     }, {}),
   ).sort((x, y) => y.units - y.bought - (x.units - x.bought));
@@ -990,9 +1003,9 @@ export function Purchasing() {
           },
           {
             label: 'Still to collect',
-            value: money(outstanding, false, currency),
-            caption: outstanding ? 'Remind before shipping' : 'All paid',
-            tone: outstanding ? 'amber' : '',
+            value: money(toCollect, false, currency),
+            caption: toCollect ? 'Remind before shipping' : 'All paid',
+            tone: toCollect ? 'amber' : '',
             icon: 'Wallet',
           },
           {
@@ -1004,7 +1017,7 @@ export function Purchasing() {
           },
         ]}
       />
-      <div className="toolbar">
+      <div className="toolbar purchase-toolbar">
         <TripFilter trips={trips} value={trip} onChange={setTrip} />
         <Tabs options={['Checklist', 'Recap by item']} value={view} onChange={setView} />
         <span className="spacer" />
@@ -1100,6 +1113,14 @@ export function Purchasing() {
                     <PayBadge order={o} />
                     <Badge status={o.status} />
                   </span>
+                  {role !== 'Helper' && ['Confirmed', 'Paid'].includes(o.status) && (
+                    <button
+                      className="text-btn cant-buy"
+                      onClick={() => setDialog({ type: 'unavailable', id: o.id })}
+                    >
+                      Can’t buy
+                    </button>
+                  )}
                 </div>
               ))}
           </section>
@@ -1140,7 +1161,8 @@ export function Reports() {
   const revenue = list.reduce((a, o) => a + o.total, 0),
     cost = list.reduce((a, o) => a + (o.actualCost ?? o.quotedCost) * o.qty, 0),
     net = list.reduce((a, o) => a + orderProfit(o), 0),
-    unpaid = list.reduce((a, o) => a + Math.max(0, o.total - o.paid), 0);
+    unpaid = list.reduce((a, o) => a + outstanding(o), 0),
+    hits = list.filter((o) => marginHit(o) > 0);
   const entities =
     group === 'By trip'
       ? trips
@@ -1202,7 +1224,13 @@ export function Reports() {
           {
             label: 'Net profit',
             value: money(net, true, currency),
-            caption: 'After allocated trip costs',
+            caption: hits.length
+              ? `${hits.length} ${hits.length === 1 ? 'order' : 'orders'} cost more in store (−${money(
+                  hits.reduce((a, o) => a + marginHit(o), 0),
+                  true,
+                  currency,
+                )})`
+              : 'After allocated trip costs',
           },
           {
             label: 'Outstanding',
@@ -1288,6 +1316,7 @@ export function Customers() {
     setDialog,
     setDrawer,
     exportCsv,
+    creditFor,
   } = useOps();
   const [q, setQ] = useState('');
   const list = [...new Map([...orders, ...customers].map((c) => [c.phone, c])).values()].filter(
@@ -1325,6 +1354,7 @@ export function Customers() {
                 <th>WhatsApp</th>
                 <th>Delivery address</th>
                 <th className="num">Total spent</th>
+                <th className="num">Credit</th>
               </tr>
             </thead>
             <tbody>
@@ -1350,6 +1380,13 @@ export function Customers() {
                       orders.filter((o) => o.phone === c.phone && o.status !== 'Cancelled'),
                       trips,
                       (o) => o.total,
+                    )}
+                  </td>
+                  <td className="num">
+                    {creditFor(c.phone) ? (
+                      <span className="credit-pill">{money(creditFor(c.phone))}</span>
+                    ) : (
+                      <span className="muted">—</span>
                     )}
                   </td>
                 </tr>

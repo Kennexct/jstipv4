@@ -47,3 +47,7 @@ Review items still open: APK env secrets, public app URL for links in APK, per-r
 - Plan of record: the doc "Bawa from a jastiper's seat" → Delivery plan (4 sprints, 26 Oct – 18 Dec). Kenny's answers: no `wa.me` (Open in WhatsApp dropped), refunds on the same ledger, interviews confirmed.
 - Branch `feature/sprint-1-daily-ops`, stacked on `feature/landing-and-support-chat`. Phases 1–3 written.
 - 2026-10-23 sprint 1 built (phases 4–6) on `feature/sprint-1-daily-ops`: unit 19/19, db 3/3, e2e 23/23, integration 4/4. Tracker items set to In review. Needs Kenny: apply migrations 202610220001 + 202610230001, then the patches, then smoke test (reviews/2026-10-23-sprint-1-qa-report.md). Next: sprint 2 (9–20 Nov) — out of stock/substitute, buyer refunds on the same ledger, ongkir, needs-me-today, deadline on cards.
+
+## 2026-10-23 sprint-2-money-and-stock (ADR-009, Accepted)
+- Sprint 1 manual QA done by Kenny (deployed). Sprint 2 approved 16:26; branch `feature/sprint-2-money-and-stock` (stacked on sprint 1). Phases 1–3 written.
+- 2026-10-23 sprint 2 built (phases 4–6) on `feature/sprint-2-money-and-stock`: unit 25/25, db 4/4, e2e 28/28, integration 5/5. Needs Kenny: run migration 202610240001 → upload code → manual QA (reviews/2026-10-23-sprint-2-qa-report.md). Next: sprint 3 (close the trip, luggage planner, paste-a-chat, packing labels, receipt per store).

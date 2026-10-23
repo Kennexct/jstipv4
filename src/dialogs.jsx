@@ -15,6 +15,14 @@ import { rpc } from './lib/supabase';
 import { ManualInvoice } from './live-workspaces';
 import { orderMessage, trackingLink } from './lib/messages';
 import {
+  OngkirRow,
+  PaymentLedger,
+  CreditNote,
+  OrderActions,
+  SubstitutionHistory,
+  MarginHit,
+} from './order-money';
+import {
   money,
   margin,
   rates,
@@ -25,6 +33,8 @@ import {
   depositFor,
   depositLabel,
   paymentState,
+  outstanding,
+  owed,
   MAX_UNLIMITED_PER_ORDER,
   currencyOf,
   currencyNames,
@@ -174,7 +184,7 @@ export function DetailDrawer() {
               </h3>
               <Button
                 icon="Plus"
-                disabled={o.paid >= o.total || ['Cancelled', 'Delivered'].includes(o.status)}
+                disabled={outstanding(o) <= 0 || ['Cancelled', 'Delivered'].includes(o.status)}
                 onClick={() => setDialog({ type: 'payment', order: o })}
               >
                 Record payment
@@ -182,17 +192,18 @@ export function DetailDrawer() {
             </div>
             <div className="payment-summary">
               <div>
-                <span>Order total</span>
+                <span>Items</span>
                 <strong>{money(o.total, false, cur)}</strong>
               </div>
+              <OngkirRow o={o} cur={cur} />
               <div>
                 <span>Amount paid</span>
                 <strong>{money(o.paid, false, cur)}</strong>
               </div>
               <div>
                 <span>Outstanding</span>
-                <strong className={o.paid < o.total ? 'amber' : ''}>
-                  {money(Math.max(0, o.total - o.paid), false, cur)}
+                <strong className={outstanding(o) > 0 ? 'amber' : ''}>
+                  {money(outstanding(o), false, cur)}
                 </strong>
               </div>
               {o.deposit > 0 && (
@@ -205,6 +216,8 @@ export function DetailDrawer() {
                 </div>
               )}
             </div>
+            <PaymentLedger o={o} cur={cur} />
+            <CreditNote o={o} cur={cur} />
             {o.proof && (
               <a
                 className="proof-attached"
@@ -242,9 +255,14 @@ export function DetailDrawer() {
                   </strong>
                 </div>
               </div>
-              <p className="footnote">Quoted costs and exchange rates are stored as snapshots.</p>
+              <MarginHit o={o} cur={cur} />
+              <p className="footnote">
+                Quoted costs and exchange rates are stored as snapshots. Ongkir is not profit.
+              </p>
             </section>
           )}
+          <OrderActions o={o} />
+          <SubstitutionHistory o={o} cur={cur} />
           <section className="drawer-section">
             <h3>Delivery details</h3>
             <dl className="details-list">
@@ -522,7 +540,7 @@ export function Dialog() {
     address: '',
     source: 'WhatsApp',
     itemId: data.items.find((i) => i.status !== 'Draft')?.id,
-    amount: order ? Math.max(0, order.total - order.paid) : 0,
+    amount: order ? outstanding(order) : 0,
     paymentMethod: 'Bank transfer',
     link: '',
     actualPrice: order?.quotedCost || 0,
@@ -899,7 +917,7 @@ export function Dialog() {
         const o = data.orders.find((o) => o.id === order.id);
         const d = decimalsFor(base),
           amount = roundTo(f.amount, d);
-        if (amount <= 0 || amount > roundTo(o.total - o.paid, d)) {
+        if (amount <= 0 || amount > roundTo(outstanding(o), d)) {
           setError('Enter an amount above zero and no more than the outstanding balance.');
           return;
         }
@@ -1729,7 +1747,7 @@ export function Dialog() {
               <>
                 <div className="checkout-summary">
                   <span>Outstanding for {order.id}</span>
-                  <strong>{money(order.total - order.paid, false, base)}</strong>
+                  <strong>{money(outstanding(order), false, base)}</strong>
                 </div>
                 <Field label={`Payment amount (${base})`}>
                   <input
@@ -1737,7 +1755,7 @@ export function Dialog() {
                     required
                     step={decimalsFor(base) ? '0.01' : '1'}
                     min={decimalsFor(base) ? '0.01' : '1'}
-                    max={order.total - order.paid}
+                    max={outstanding(order)}
                     value={f.amount}
                     onChange={(e) => set('amount', e.target.value)}
                   />
@@ -1815,6 +1833,23 @@ export function Dialog() {
                     </div>
                   )}
                 </div>
+                {role !== 'Helper' &&
+                  (() => {
+                    const unit = roundTo(
+                      f.actualPrice * toBase(f.actualCurrency),
+                      decimalsFor(base),
+                    );
+                    const drop = (unit - Number(order.quotedCost || 0)) * order.qty;
+                    return unit > Number(order.quotedCost || 0) ? (
+                      <Callout icon="TrendingDown">
+                        Shelf price is higher than quoted. Margin on this order drops by{' '}
+                        {money(drop, false, base)}, from{' '}
+                        {money(orderProfit(order, false), false, base)} to{' '}
+                        {money(orderProfit(order, false) - drop, false, base)}. The buyer’s price
+                        stays as agreed.
+                      </Callout>
+                    ) : null;
+                  })()}
               </>
             )}
             {step === 'trip' && (

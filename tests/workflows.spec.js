@@ -495,3 +495,100 @@ test('post and add another keeps the trip and markup and clears the item', async
   await expect(page.getByRole('button', { name: 'Yuzu hand cream', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sakura lip balm', exact: true })).toBeVisible();
 });
+
+test('item unavailable cancels the order and keeps the money as buyer credit', async ({ page }) => {
+  await page.goto('/#Purchasing');
+  const row = page.locator('.purchase-row').filter({ hasText: 'Aditya' });
+  await row.getByRole('button', { name: 'Can’t buy' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Item unavailable' });
+  await expect(dialog).toContainText('Rp 425.000 already paid');
+  await dialog.getByLabel('Keep as credit').check();
+  await dialog.getByLabel('Reason (optional)').fill('Sold out in Kyoto');
+  await dialog.getByRole('button', { name: 'Cancel order' }).click();
+  await expect(page.getByText('JO-1047 cancelled and kept as credit.')).toBeVisible();
+  await page.goto('/#Customers');
+  await expect(
+    page.locator('tr').filter({ hasText: 'Aditya Pratama' }).locator('.credit-pill'),
+  ).toHaveText('Rp 425.000');
+  await page.goto('/#Orders');
+  await page.getByText('Aditya Pratama', { exact: true }).click();
+  await expect(page.locator('.ledger')).toContainText('Credit issued');
+  await expect(page.locator('.history-list')).toContainText('Sold out in Kyoto');
+});
+test('a substitute edits the same order after the buyer agrees', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/#Orders');
+  await page.getByText('Aditya Pratama', { exact: true }).click();
+  await page.getByRole('button', { name: 'Offer a substitute' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Offer a substitute' });
+  await dialog.getByRole('radio', { name: 'Something else' }).click();
+  await dialog.getByLabel('Substitute item').fill('Matcha starter tin');
+  await dialog.getByLabel(/Price per item/).fill('400000');
+  await dialog.getByLabel(/Estimated cost per item/).fill('300000');
+  await dialog.getByLabel('Quantity').fill('1');
+  await expect(dialog.getByRole('button', { name: '2. Buyer agreed → apply' })).toBeDisabled();
+  await expect(dialog).toContainText('Rp 25.000 already paid is more than the new total');
+  await dialog.getByRole('button', { name: '1. Copy offer for buyer' }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(
+    'Matcha starter tin × 1, totalnya Rp 400.000',
+  );
+  await dialog.getByRole('button', { name: '2. Buyer agreed → apply' }).click();
+  await expect(page.getByText('JO-1047 now 1 × Matcha starter tin.')).toBeVisible();
+  const drawer = page.getByRole('dialog', { name: 'Order JO-1047' });
+  await expect(drawer.locator('.order-product')).toContainText('Matcha starter tin');
+  await expect(drawer.locator('.history-list')).toContainText('Substituted');
+  await expect(drawer.locator('.credit-note')).toContainText('Rp 25.000');
+});
+test('ongkir is added after packing and must be paid before shipping', async ({ page }) => {
+  await page.goto('/#Orders');
+  await page.getByText('Dewi Anggraini', { exact: true }).click();
+  await page.getByLabel('Ongkir', { exact: true }).fill('20000');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.locator('.payment-summary')).toContainText('Rp 20.000');
+  await expect(page.locator('.drawer-section').getByText('Ongkir due')).toBeVisible();
+  await page.getByLabel('Update order status').selectOption('Shipped');
+  // Shipping is blocked until the ongkir is paid; the payment form opens with it filled in.
+  await expect(page.getByText('Record the full payment before shipping.')).toBeVisible();
+  await expect(page.getByLabel(/Payment amount/)).toHaveValue('20000');
+  await page.getByRole('button', { name: 'Record payment', exact: true }).last().click();
+  await page.getByLabel('Update order status').selectOption('Shipped');
+  await expect(page.getByRole('dialog', { name: 'Mark as shipped' })).toBeVisible();
+});
+test('compensation after delivery is recorded and lowers the margin', async ({ page }) => {
+  await page.goto('/#Orders');
+  await page.getByText('Fajar Hidayat', { exact: true }).click();
+  const before = await page.locator('.margin-pair div').nth(1).locator('strong').innerText();
+  await page.getByRole('button', { name: 'Refund or credit' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Refund or credit' });
+  await expect(dialog).toContainText('lowers this order’s profit');
+  await dialog.getByLabel(/Amount/).fill('50000');
+  await dialog.getByRole('button', { name: 'Record refund' }).click();
+  await expect(dialog.getByText('Add a short reason.')).toBeVisible();
+  await dialog.getByLabel('Reason').fill('Tin arrived dented');
+  await dialog.getByRole('button', { name: 'Record refund' }).click();
+  await expect(page.locator('.ledger')).toContainText('compensation');
+  const after = await page.locator('.margin-pair div').nth(1).locator('strong').innerText();
+  const n = (s) => Number(s.replace(/\D/g, ''));
+  expect(n(before) - n(after)).toBe(50000);
+});
+test('needs-you-today lists waiting orders and storefront shows the PO deadline', async ({
+  page,
+}) => {
+  await page.goto('/#Overview');
+  const panel = page.locator('.needs-today');
+  await expect(panel).toContainText('Requests to quote');
+  await expect(panel).toContainText('Ready to ship');
+  await panel.getByRole('button', { name: 'Quote' }).first().click();
+  await expect(page.getByRole('dialog', { name: 'Prepare a quote' })).toBeVisible();
+  await page.getByRole('button', { name: 'Close dialog' }).click();
+  // Give an item a deadline two days out; its storefront card counts down.
+  const soon = new Date(Date.now() + 2 * 864e5).toISOString().slice(0, 10);
+  await page.goto('/#Items');
+  await page.getByRole('button', { name: 'Edit Matcha ceremonial blend' }).click();
+  await page.getByLabel('Order deadline (optional)').fill(soon);
+  await page.getByRole('button', { name: 'Save item' }).click();
+  await page.goto('/#Storefront');
+  await expect(
+    page.locator('.store-product').filter({ hasText: 'Matcha ceremonial blend' }),
+  ).toContainText(/PO closes (in 2 days|tomorrow)/);
+});

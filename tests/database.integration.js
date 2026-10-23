@@ -430,3 +430,55 @@ test('signed-out visitors see the landing page and chat with the platform owner'
   expect(errors).toEqual([]);
   await adminContext.close();
 });
+test('item unavailable keeps money as credit, and the same buyer pays a new order with it', async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(120000);
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  for (const name of ['Credit Buyer A', 'Credit Buyer B']) {
+    const buyer = await browser.newPage();
+    await buyer.goto('http://127.0.0.1:3002/#Storefront/actual-shop');
+    await buyer.getByRole('button', { name: /Actual matcha/ }).click();
+    await buyer.getByRole('button', { name: 'Order this item' }).click();
+    await buyer.getByLabel('Your name').fill(name);
+    await buyer.getByLabel('WhatsApp number').fill('628777777777');
+    await buyer.getByLabel('Delivery address').fill('Bandung Indonesia');
+    await buyer.getByRole('checkbox').check();
+    await buyer.getByRole('button', { name: 'Place order' }).click();
+    await expect(buyer.getByText('Private tracking token', { exact: true })).toBeVisible();
+    await buyer.close();
+  }
+  await session(page);
+  await page.goto('/#Orders');
+  await page.getByText('Credit Buyer A', { exact: true }).click();
+  await page.getByLabel('Update order status').selectOption('Confirmed');
+  await expect(page.getByLabel('Update order status')).toHaveValue('Confirmed');
+  await page.getByRole('button', { name: 'Record payment', exact: true }).click();
+  await page.getByRole('button', { name: 'Record payment', exact: true }).last().click();
+  await expect(page.getByLabel('Update order status')).toHaveValue('Paid');
+  await page.getByRole('button', { name: 'Item unavailable' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Item unavailable' });
+  await dialog.getByLabel('Keep as credit').check();
+  await dialog.getByRole('button', { name: 'Cancel order' }).click();
+  await expect(page.getByLabel('Update order status')).toHaveValue('Cancelled');
+  await expect(page.locator('.ledger')).toContainText('Credit issued');
+  await page.getByRole('button', { name: 'Close detail' }).click();
+  await page.getByText('Credit Buyer B', { exact: true }).click();
+  await page.getByLabel('Update order status').selectOption('Confirmed');
+  await expect(page.locator('.credit-note')).toContainText('credit');
+  await page.locator('.credit-note').getByRole('button', { name: 'Use credit' }).click();
+  await page
+    .getByRole('dialog', { name: 'Pay with credit' })
+    .getByRole('button', { name: 'Use credit' })
+    .click();
+  await expect(page.getByLabel('Update order status')).toHaveValue('Paid');
+  await expect(page.locator('.ledger')).toContainText('Paid with credit');
+  // Balance is used up, so the buyer no longer shows credit.
+  await page.goto('/#Customers');
+  await expect(
+    page.locator('tr').filter({ hasText: 'Credit Buyer' }).locator('.credit-pill'),
+  ).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

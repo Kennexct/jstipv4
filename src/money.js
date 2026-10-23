@@ -77,9 +77,16 @@ export const currencyOf = (record, trips = []) =>
   record?.baseCurrency ||
   (record?.trip && trips.find((t) => t.id === record.trip)?.baseCurrency) ||
   'IDR';
+// Ongkir passes through; compensation refunded after delivery lowers profit (ADR-009).
+export const compensation = (o) =>
+  (o?.payments || [])
+    .filter((p) => p.compensation)
+    .reduce((sum, p) => sum + Math.abs(Number(p.amount) || 0), 0);
 export function orderProfit(o, actual = true) {
   return (
-    o.total - ((actual ? (o.actualCost ?? o.quotedCost) : o.quotedCost) + o.allocation) * o.qty
+    o.total -
+    ((actual ? (o.actualCost ?? o.quotedCost) : o.quotedCost) + o.allocation) * o.qty -
+    compensation(o)
   );
 }
 export function allocate(trip, items, { qty = 1, cost = 0, id } = {}) {
@@ -122,16 +129,41 @@ export const depositLabel = (item) =>
     : item?.depositMode === 'amount' && item.depositValue
       ? `DP ${money(item.depositValue, false, item.baseCurrency)} / item`
       : '';
+// Ongkir (ADR-009) is separate from the frozen item total. What the buyer owes = items + ongkir.
+export const shippingFee = (o) => Number(o?.shippingFee) || 0;
+export const owed = (o) => (Number(o?.total) || 0) + shippingFee(o);
+export const outstanding = (o) =>
+  o?.status === 'Cancelled' ? 0 : Math.max(0, owed(o) - (Number(o?.paid) || 0));
+// Ledger lines with a type are adjustments made through the order actions.
+export const ledgerLabel = (p) =>
+  ({ refund: 'Refund', credit: 'Credit issued', 'credit-use': 'Paid with credit' })[p?.type] ||
+  p?.method ||
+  'Payment';
+export const adjustments = (o, type) =>
+  (o?.payments || [])
+    .filter((p) => (type ? p.type === type : ['refund', 'credit'].includes(p.type)))
+    .reduce((sum, p) => sum + Math.abs(Number(p.amount) || 0), 0);
 export function paymentState(order) {
   const paid = Number(order?.paid) || 0,
     total = Number(order?.total) || 0,
+    fee = shippingFee(order),
     deposit = Number(order?.deposit) || 0;
-  if (total > 0 && paid >= total) return { label: 'Paid in full', tone: 'green' };
+  if (order?.status === 'Cancelled' && adjustments(order) > 0)
+    return adjustments(order, 'credit') > 0
+      ? { label: 'Kept as credit', tone: 'blue' }
+      : { label: 'Refunded', tone: 'gray' };
+  if (total > 0 && paid >= total + fee) return { label: 'Paid in full', tone: 'green' };
+  if (total > 0 && fee > 0 && paid >= total) return { label: 'Ongkir due', tone: 'amber' };
   if (deposit > 0 && paid >= deposit) return { label: 'DP paid', tone: 'blue' };
   if (paid > 0) return { label: 'Partly paid', tone: 'amber' };
   if (deposit > 0) return { label: 'DP due', tone: 'amber' };
   return { label: 'Unpaid', tone: 'gray' };
 }
+// Margin hit: the real purchase cost came in above the quoted cost (shelf price changed).
+export const marginHit = (o) =>
+  o?.actualCost != null && Number(o.actualCost) > Number(o.quotedCost || 0)
+    ? (Number(o.actualCost) - Number(o.quotedCost || 0)) * (Number(o.qty) || 1)
+    : 0;
 // "Rp 1.250.000 · S$ 64.00": per-currency totals without conversion.
 export function moneyTotals(list, trips, value, compact = false) {
   const totals = new Map();

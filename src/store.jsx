@@ -3,6 +3,8 @@ import { demoMode, supabase, rpc, publicSlug } from './lib/supabase';
 import { emptyWorkspace, recordId, csvCell } from './lib/records';
 import { loadWorkspace, loadStorefront, commitWorkspace, adminAction } from './lib/repository';
 import { canShip, shipBlocker, normaliseResi } from './lib/messages';
+import { creditBalances, phoneKey } from './lib/order-actions';
+import { owed } from './money';
 const Context = createContext(null);
 export const useOps = () => useContext(Context);
 // Register a form's unsaved state so navigation, Esc and closing ask before discarding it.
@@ -42,7 +44,8 @@ export function Provider({ children, initialSeed }) {
     [pageLoading, setPageLoading] = useState(false),
     [routeLoading, setRouteLoading] = useState(false),
     [confirm, setConfirm] = useState(null),
-    [savedMessaging, setSavedMessaging] = useState(null);
+    [savedMessaging, setSavedMessaging] = useState(null),
+    [savedCredits, setSavedCredits] = useState([]);
   const dataRef = useRef(data),
     supportRef = useRef(support),
     busyRef = useRef(false),
@@ -514,7 +517,7 @@ export function Provider({ children, initialSeed }) {
     }
     const paid = patch.paid ?? o.paid,
       deposit = patch.deposit ?? o.deposit ?? 0;
-    if (['Shipped', 'Delivered'].includes(patch.status) && paid < o.total) {
+    if (['Shipped', 'Delivered'].includes(patch.status) && paid < owed(o)) {
       announce('Record the full payment before shipping.');
       setDialog({ type: 'payment', order: o });
       return false;
@@ -571,6 +574,60 @@ export function Provider({ children, initialSeed }) {
     };
   }, [connection, data.workspaceId, mode]);
   const messaging = demoMode ? data.messaging || {} : savedMessaging || {};
+  // Buyer credit balances (ADR-009), keyed by WhatsApp digits.
+  const loadCredits = () =>
+    !demoMode &&
+    data.workspaceId &&
+    rpc('jastip_buyer_credits', { p_workspace: data.workspaceId })
+      .then((list) => setSavedCredits(list || []))
+      .catch(() => setSavedCredits([]));
+  useEffect(() => {
+    if (demoMode || connection !== 'ready' || !data.workspaceId || mode !== 'seller') return;
+    loadCredits();
+  }, [connection, data.workspaceId, mode, data.revision]);
+  const credits = demoMode ? creditBalances(data.credits) : savedCredits;
+  const creditFor = (phone) =>
+    Number(credits.find((c) => c.phone === phoneKey(phone))?.balance) || 0;
+  // One path for the money actions: RPC when live, the same rules locally in demo mode.
+  const orderAction = async (rpcName, args, demoFn, label) => {
+    if (supportRef.current) {
+      announce('Support view is read-only. Exit support view to edit.');
+      return false;
+    }
+    if (demoMode) {
+      try {
+        install(demoFn(structuredClone(dataRef.current)));
+        announce(label);
+        return true;
+      } catch (e) {
+        announce(e.message);
+        return false;
+      }
+    }
+    if (busyRef.current) {
+      announce('A change is still saving. Please wait.');
+      return false;
+    }
+    busyRef.current = true;
+    setPending(true);
+    try {
+      const result = await rpc(rpcName, {
+        p_workspace: dataRef.current.workspaceId,
+        p_revision: dataRef.current.revision,
+        ...args,
+      });
+      install({ ...result, preferences: dataRef.current.preferences });
+      announce(label);
+      return true;
+    } catch (e) {
+      announce('Not saved: ' + e.message);
+      if (/Another user/.test(e.message)) await reload();
+      return false;
+    } finally {
+      busyRef.current = false;
+      setPending(false);
+    }
+  };
   const saveMessaging = async (value) => {
     if (supportRef.current) {
       announce('Support view is read-only. Exit support view to edit.');
@@ -647,6 +704,9 @@ export function Provider({ children, initialSeed }) {
         messaging,
         saveMessaging,
         shipOrders,
+        credits,
+        creditFor,
+        orderAction,
         setData,
         change,
         page,

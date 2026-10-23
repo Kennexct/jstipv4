@@ -34,9 +34,21 @@ const args = {
   jastip_messaging: ['p_workspace'],
   jastip_save_messaging: ['p_workspace', 'p_value'],
   jastip_ship_orders: ['p_workspace', 'p_revision', 'p_shipments'],
+  jastip_order_unavailable: ['p_workspace', 'p_revision', 'p_order_id', 'p_mode', 'p_note'],
+  jastip_order_refund: ['p_workspace', 'p_revision', 'p_order_id', 'p_amount', 'p_mode', 'p_note'],
+  jastip_use_credit: ['p_workspace', 'p_revision', 'p_order_id', 'p_amount'],
+  jastip_substitute_order: [
+    'p_workspace',
+    'p_revision',
+    'p_order_id',
+    'p_change',
+    'p_excess_mode',
+    'p_note',
+  ],
+  jastip_buyer_credits: ['p_workspace'],
 };
 const emails = [];
-const jsonArgs = new Set(['p_changes', 'p_shop', 'p_order', 'p_value', 'p_shipments']);
+const jsonArgs = new Set(['p_changes', 'p_shop', 'p_order', 'p_value', 'p_shipments', 'p_change']);
 const quote = (v) => "'" + String(v).replaceAll("'", "''") + "'";
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');

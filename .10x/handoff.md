@@ -20,3 +20,9 @@ Spec `specs/2026-10-23-sprint-1-daily-ops-design.md`, ADR-008, task order in `de
 
 ## 2026-10-23 — sprint 1 built (to Kenny / DevOps, then sprint 2 PM)
 Deploy order in `decisions/devops/sprint-1-daily-ops.md`. Sprint 2 starts with a spec for out-of-stock/substitute plus buyer refunds on the existing payment ledger (Kenny: same ledger).
+
+## 2026-10-23 — sprint 2 (to DBA first)
+Start with the migration and `validate_record` v3; run the full SQL suite before any UI work. Spec `specs/2026-10-23-sprint-2-money-and-stock-design.md`, ADR-009.
+
+## 2026-10-23 — sprint 2 built (to Kenny, then sprint 3 PM)
+Deploy order in `decisions/devops/sprint-2-money-and-stock.md`. Sprint 3 starts with brainstorming "Close the trip" (FX actually paid, final costs, unpaid, refunds → one-page recap).

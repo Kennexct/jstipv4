@@ -1017,6 +1017,17 @@ export function Welcome() {
     </>
   );
 }
+// "PO closes in 2 days" from an item's order deadline (the server hides items after it passes).
+export function deadlineLabel(deadline, now = new Date()) {
+  if (!deadline) return '';
+  const end = new Date(deadline + 'T23:59:59');
+  if (Number.isNaN(end.getTime())) return '';
+  const days = Math.floor((end - now) / 864e5);
+  if (days < 0) return '';
+  if (days === 0) return 'PO closes today';
+  if (days === 1) return 'PO closes tomorrow';
+  return days <= 14 ? `PO closes in ${days} days` : '';
+}
 export function Storefront({ theme: override, embedded = false }) {
   const {
     data: { items, trips, shop },
@@ -1076,6 +1087,7 @@ export function Storefront({ theme: override, embedded = false }) {
       {variant !== 'lb' && <small>{i.category}</small>}
       <h3>{i.name}</h3>
       <strong className="store-price">{price(i)}</strong>
+      {deadlineLabel(i.deadline) && <em className="store-deadline">{deadlineLabel(i.deadline)}</em>}
       <span>
         {variant === 'lb' ? tripOf(i)?.name : stockLabel(i)}
         {depositLabel(i) && <em className="store-dp">{depositLabel(i)}</em>}

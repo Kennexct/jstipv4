@@ -75,6 +75,12 @@ import {
   Compass,
   CornerDownLeft,
   ChevronLeft,
+  PackageX,
+  Replace,
+  Undo2,
+  TrendingDown,
+  Clock,
+  Truck,
 } from 'lucide-react';
 const icons = {
   Circle,
@@ -148,6 +154,12 @@ const icons = {
   Compass,
   CornerDownLeft,
   ChevronLeft,
+  PackageX,
+  Replace,
+  Undo2,
+  TrendingDown,
+  Clock,
+  Truck,
 };
 export const navIcons = {
   Overview: 'LayoutDashboard',
